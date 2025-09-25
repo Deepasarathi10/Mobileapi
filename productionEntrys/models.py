@@ -32,6 +32,14 @@ class ProductionEntry(BaseModel):
     weight: Optional[List[float]] = None
     qty: Optional[List[int]] = None
     amount: Optional[List[float]] = None
+    cancelVarianceName: Optional[List[str]] = None
+    cancelUom: Optional[List[str]] = None
+    cancelItemName: Optional[List[str]] = None
+    cancelPrice: Optional[List[int]] = None
+    cancelItemCode: Optional[List[str]] = None
+    cancelWeight: Optional[List[float]] = None
+    cancelQty: Optional[List[int]] = None
+    cancelAmount: Optional[List[float]] = None
     totalAmount: Optional[Any] = None
     warehouseName: Optional[str] = None
     date: Optional[datetime] = None  # ISO 8601 formatted datetime
@@ -49,6 +57,14 @@ class ProductionEntryPost(BaseModel):
     weight: Optional[List[float]] = None
     qty: Optional[List[int]] = None
     amount: Optional[List[float]] = None
+    cancelVarianceName: Optional[List[str]] = None
+    cancelUom: Optional[List[str]] = None
+    cancelItemName: Optional[List[str]] = None
+    cancelPrice: Optional[List[int]] = None
+    cancelItemCode: Optional[List[str]] = None
+    cancelWeight: Optional[List[float]] = None
+    cancelQty: Optional[List[int]] = None
+    cancelAmount: Optional[List[float]] = None
     totalAmount: Optional[str] = None
     warehouseName: Optional[str] = None
     date: Optional[str] = Field(default_factory=lambda: get_iso_datetime())

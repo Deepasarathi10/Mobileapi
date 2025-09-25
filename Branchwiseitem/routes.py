@@ -41,6 +41,7 @@ import time
 # from pyzbar.pyzbar import decode
 from fastapi import APIRouter, status
 from promotionalOffer.utils import get_collection
+from Branches.utils import get_branch_collection
 
 router = APIRouter()
 mongo_client = AsyncIOMotorClient("mongodb://admin:YenE580nOOUE6cDhQERP@194.233.78.90:27017/admin?appName=mongosh+2.1.1&authSource=admin&authMechanism=SCRAM-SHA-256&replicaSet=yenerp-cluster")
@@ -56,6 +57,8 @@ async def create_item(item: BranchwiseItemPost):
 branchwise_items_collection = db["fortest"]
 variances_collection = db["variances"]
 items_collection23 = db["items"]  # Items collection
+
+branch_collection = get_branch_collection()
 
 
 # Export Csv
@@ -1438,6 +1441,77 @@ async def update_physical_stock(
         update_responses.append(updated_stock_details)
 
     return update_responses
+
+
+@router.patch("/update_systemstock")
+async def update_system_stock(
+    variance_names: List[str] = Body(..., description="List of variance names of the items to update"),
+    branches: List[str] = Body(..., description="List of full branch names"),
+    stock_updates: List[int] = Body(..., description="List of system stock counts to update")
+):
+    """Update system stock for multiple variances and branches."""
+    try:
+        
+        if len(variance_names) != len(branches) or len(variance_names) != len(stock_updates):
+            raise HTTPException(status_code=400, detail="The lengths of variance names, branches, and stock updates must match")
+        
+        update_responses = []
+        
+        for variance_name, branch_name, stock_update in zip(variance_names, branches, stock_updates):
+            try:
+                branch_doc = await branch_collection.find_one({"branchName": branch_name}, {"_id": 0, "aliasName": 1})
+                
+                if not branch_doc:
+                    update_responses.append({
+                        "varianceName": variance_name,
+                        "branchName": branch_name,
+                        "error": "Branch not found"
+                    })
+                    continue
+                
+                alias_name = branch_doc["aliasName"]
+                
+                update_result = await branchwiseitem_collection.update_one(
+                    {"varianceName": variance_name},
+                    {"$set": {f"systemStock_{alias_name}": stock_update}}
+                )
+                
+                if update_result.modified_count == 0:
+                    update_responses.append({
+                        "varianceName": variance_name,
+                        "branchName": branch_name,
+                        "aliasName": alias_name,
+                        "error": "Item not found or no update needed"
+                    })
+                    continue
+                
+                item = await branchwiseitem_collection.find_one({"varianceName": variance_name}, {"_id": 0})
+                updated_value = item.get(f"systemStock_{alias_name}")
+                
+                update_responses.append({
+                    "varianceName": variance_name,
+                    "branchName": branch_name,
+                    "aliasName": alias_name,
+                    "updatedSystemStock": updated_value
+                })
+            
+            except Exception as inner_err:
+                print(f"🔥 Error updating {variance_name} for {branch_name}: {inner_err}")
+                update_responses.append({
+                    "varianceName": variance_name,
+                    "branchName": branch_name,
+                    "error": f"Update failed: {str(inner_err)}"
+                })
+        
+        return {"status": "success", "updates": update_responses}
+    
+    except HTTPException as http_err:
+        print(f"❌ HTTP error: {http_err.detail}")
+        raise http_err
+    except Exception as e:
+        print(f"🔥 Unexpected server error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
     
  
  

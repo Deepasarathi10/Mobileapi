@@ -114,6 +114,11 @@ routes_info = [
     {"module": "production_summary.routes", "prefix": "/fastapi/productionsummarys", "tags": ["productionsummarys"]},
     {"module": "dayEnd_Validations.routes", "prefix": "/fastapi/dayendvalidations", "tags": ["DayEndValidations"]},
 	{"module": "HeldOrders.routes", "prefix": "/fastapi/heldorders", "tags": ["HeldOrder"]},
+	{"module": "SFGitems.routes", "prefix": "/fastapi/sfgitems", "tags": ["SFG Items"]},
+	{"module": "fgsales.routes", "prefix": "/fastapi/fgsales", "tags": ["FG Sales"]},
+	{"module": "fgsummary.routes", "prefix": "/fastapi/fgsummaries", "tags": ["FG Summary"]},
+	{"module": "sfgtofg.routes", "prefix": "/fastapi/sfgtofgs", "tags": ["SFG to FG"]},
+
 
     # Daily activities API 
     {"module": "meterdetailsapi.routes", "prefix": "/fastapi/meterdetails", "tags": ["Meter Details"]},

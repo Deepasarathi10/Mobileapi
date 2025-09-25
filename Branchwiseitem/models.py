@@ -23,6 +23,8 @@ class BranchwiseItem(BaseModel):
     create_item_Date: Optional[str] = None
     updated_item_Date: Optional[str] = None
     promotional_Offer:Optional[str]=None
+    plateItems:Optional[bool]=None
+
     
 
 class BranchwiseItemPost(BaseModel):
@@ -47,7 +49,7 @@ class BranchwiseItemPost(BaseModel):
     create_item_Date: Optional[str] = None
     updated_item_Date: Optional[str] = None
     promotional_Offer:Optional[str]=None
-    
+    plateItems:Optional[bool]=None
     
 class BranchwiseItemPatch(BaseModel):
     varianceName: Optional[str] = None
@@ -66,7 +68,7 @@ class BranchwiseItemPatch(BaseModel):
     create_item_Date: Optional[str] = None
     updated_item_Date: Optional[str] = None
     promotional_Offer:Optional[str]=None
-
+    plateItems:Optional[bool]=None
 
 class ItemUpdate(BaseModel):
     updates: Dict[Any, Any]
