@@ -15,6 +15,8 @@ class Item(BaseModel):
     ordertype: Optional[str] = None
     create_item_date: Optional[str] = None
     updated_item_date: Optional[str] = None
+    plateItems:Optional[bool]=None
+    
 
 class ItemPost(BaseModel):
     itemCode: Optional[str] = None
@@ -29,3 +31,4 @@ class ItemPost(BaseModel):
     ordertype: Optional[str] = None
     create_item_date: Optional[str] = None
     updated_item_date: Optional[str] = None
+    plateItems:Optional[bool]=None

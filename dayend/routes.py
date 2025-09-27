@@ -5,7 +5,12 @@ from .models import DayEnd,DayEndPost
 from .utils import get_dayEnd_collection
 from datetime import datetime
 from fastapi import Body
-from shift.utils import get_shift_collection  
+from shift.utils import get_shift_collection
+from HeldOrders.utils import get_holdOrder_collection
+from SalesOrder.utils import get_salesOrder_collection 
+from dispatch.utils import get_dispatch_collection
+from itemTransfer.utils import get_itemtransfer_collection 
+   
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -61,6 +66,86 @@ async def get_difference_type(difference: Decimal) -> str:
         return "excess"
     return "no difference"
 
+# @router.post("/dayend", response_model=str)
+# async def create_dayend(dayend_data: DayEnd = Body(...)):
+#     shift_collection = get_shift_collection()
+#     if not dayend_data.branchName:
+#         raise HTTPException(status_code=400, detail="branchName is required")
+    
+#     open_shifts = await shift_collection.find(
+#         {"branchName": dayend_data.branchName, "dayEndStatus": "open"}
+#     ).sort("OpeningDateTime", 1).to_list(length=None)
+    
+#     if not open_shifts:
+#         raise HTTPException(status_code=404, detail="No open shifts found")
+    
+#     first_dt = None
+#     for shift in open_shifts:
+#         dt = await first_opening_dt(shift)
+#         if dt:
+#             first_dt = dt
+#             break
+#     if not first_dt:
+#         raise HTTPException(status_code=400, detail="Invalid OpeningDateTime")
+    
+#     local_open = await to_local(first_dt)
+#     dayOpeningDate = local_open.date().isoformat()
+#     dayOpeningTime = local_open.time().isoformat(timespec="seconds")
+    
+#     now_utc = datetime.now(timezone.utc)
+#     local_close = await to_local(now_utc)
+#     dayClosingDate = local_close.date().isoformat()
+#     dayClosingTime = local_close.time().isoformat(timespec="seconds")
+    
+#     # Summation
+#     systemCash = sum( to_dec(s.get("systemCashSales")) for s in open_shifts)
+#     systemCard = sum( to_dec(s.get("systemCardSales")) for s in open_shifts)
+#     systemUpi  = sum( to_dec(s.get("systemUpiSales"))  for s in open_shifts)
+    
+#     manualCash = sum( to_dec(s.get("manualCashsales")) for s in open_shifts)
+#     manualCard = sum( to_dec(s.get("manualCardsales")) for s in open_shifts)
+#     manualUpi  = sum( to_dec(s.get("manualUpisales"))  for s in open_shifts)
+
+#     cashDifference = manualCash - systemCash
+#     cardDifference = manualCard - systemCard
+#     upiDifference  = manualUpi  - systemUpi
+    
+#     totalSystem = systemCash + systemCard + systemUpi
+#     totalManual = manualCash + manualCard + manualUpi
+#     totalDifference = totalManual - totalSystem
+    
+#     new_dayend = dayend_data.model_dump(exclude_unset=True)
+#     new_dayend.update({
+#         "dayOpeningDate": dayOpeningDate,
+#         "dayOpeningTime": dayOpeningTime,
+#         "dayClosingDate": dayClosingDate,
+#         "dayClosingTime": dayClosingTime,
+#         "systemCashSales": str(systemCash),
+#         "systemCardSales": str(systemCard),
+#         "systemUpiSales":  str(systemUpi),
+#         "manualCashSales": str(manualCash),
+#         "manualCardSales": str(manualCard),
+#         "manualUpiSales":  str(manualUpi),
+#         "cashDifferenceAmount": str(cashDifference),
+#         "cashDifferenceType": await get_difference_type(cashDifference),
+#         "cardDifferenceAmount": str(cardDifference),
+#         "cardDifferenceType": await get_difference_type(cardDifference),
+#         "upiDifferenceAmount": str(upiDifference),
+#         "upiDifferenceType": await get_difference_type(upiDifference),
+#         "totalSystemSales": str(totalSystem),
+#         "totalManualSales": str(totalManual),
+#         "totalDifferenceAmount": str(totalDifference),
+#         "totalDifferenceType": await get_difference_type(totalDifference),
+#         "status": "closed",
+#     })
+    
+#     dayend_collection = get_dayEnd_collection()
+#     result = await dayend_collection.insert_one(new_dayend)
+#     await dayend_collection.update_one(
+#         {"_id": result.inserted_id}, {"$set": {"dayEndId": str(result.inserted_id)}}
+#     )
+#     return str(result.inserted_id)
+
 @router.post("/dayend", response_model=str)
 async def create_dayend(dayend_data: DayEnd = Body(...)):
     shift_collection = get_shift_collection()
@@ -74,6 +159,7 @@ async def create_dayend(dayend_data: DayEnd = Body(...)):
     if not open_shifts:
         raise HTTPException(status_code=404, detail="No open shifts found")
     
+    # --- Opening and Closing DateTimes ---
     first_dt = None
     for shift in open_shifts:
         dt = await first_opening_dt(shift)
@@ -91,16 +177,34 @@ async def create_dayend(dayend_data: DayEnd = Body(...)):
     local_close = await to_local(now_utc)
     dayClosingDate = local_close.date().isoformat()
     dayClosingTime = local_close.time().isoformat(timespec="seconds")
-    
-    # Summation
-    systemCash = sum( to_dec(s.get("systemCashSales")) for s in open_shifts)
-    systemCard = sum( to_dec(s.get("systemCardSales")) for s in open_shifts)
-    systemUpi  = sum( to_dec(s.get("systemUpiSales"))  for s in open_shifts)
-    
-    manualCash = sum( to_dec(s.get("manualCashsales")) for s in open_shifts)
-    manualCard = sum( to_dec(s.get("manualCardsales")) for s in open_shifts)
-    manualUpi  = sum( to_dec(s.get("manualUpisales"))  for s in open_shifts)
 
+    # --- Summations across open shifts ---
+    systemCash = sum(to_dec(s.get("systemCashSales")) for s in open_shifts)
+    systemCard = sum(to_dec(s.get("systemCardSales")) for s in open_shifts)
+    systemUpi  = sum(to_dec(s.get("systemUpiSales"))  for s in open_shifts)
+    
+    manualCash = sum(to_dec(s.get("manualCashsales")) for s in open_shifts)
+    manualCard = sum(to_dec(s.get("manualCardsales")) for s in open_shifts)
+    manualUpi  = sum(to_dec(s.get("manualUpisales"))  for s in open_shifts)
+
+    # --- New per-type sales aggregation ---
+    kotCash = sum(to_dec(s.get("kotCashSales")) for s in open_shifts)
+    kotCard = sum(to_dec(s.get("kotCardSales")) for s in open_shifts)
+    kotUpi  = sum(to_dec(s.get("kotUpiSales"))  for s in open_shifts)
+
+    takeCash = sum(to_dec(s.get("takeAwayCashSales")) for s in open_shifts)
+    takeCard = sum(to_dec(s.get("takeAwayCardSales")) for s in open_shifts)
+    takeUpi  = sum(to_dec(s.get("takeAwayUpiSales"))  for s in open_shifts)
+
+    soCash = sum(to_dec(s.get("saleOrderCashSales")) for s in open_shifts)
+    soCard = sum(to_dec(s.get("saleOrderCardSales")) for s in open_shifts)
+    soUpi  = sum(to_dec(s.get("saleOrderUpiSales"))  for s in open_shifts)
+
+    bdCash = sum(to_dec(s.get("bdCakeCashSales")) for s in open_shifts)
+    bdCard = sum(to_dec(s.get("bdCakeCardSales")) for s in open_shifts)
+    bdUpi  = sum(to_dec(s.get("bdCakeUpiSales"))  for s in open_shifts)
+
+    # --- Differences ---
     cashDifference = manualCash - systemCash
     cardDifference = manualCard - systemCard
     upiDifference  = manualUpi  - systemUpi
@@ -109,24 +213,56 @@ async def create_dayend(dayend_data: DayEnd = Body(...)):
     totalManual = manualCash + manualCard + manualUpi
     totalDifference = totalManual - totalSystem
     
+    # --- Totals by type ---
+    totalKotSales       = kotCash + kotCard + kotUpi
+    totalTakeAwaySales  = takeCash + takeCard + takeUpi
+    totalSaleOrderSales = soCash + soCard + soUpi
+    totalBdCakeSales    = bdCash + bdCard + bdUpi
+    
+    # --- Final DayEnd document ---
     new_dayend = dayend_data.model_dump(exclude_unset=True)
     new_dayend.update({
         "dayOpeningDate": dayOpeningDate,
         "dayOpeningTime": dayOpeningTime,
         "dayClosingDate": dayClosingDate,
         "dayClosingTime": dayClosingTime,
+        
         "systemCashSales": str(systemCash),
         "systemCardSales": str(systemCard),
         "systemUpiSales":  str(systemUpi),
+
         "manualCashSales": str(manualCash),
         "manualCardSales": str(manualCard),
         "manualUpiSales":  str(manualUpi),
+
+        "kotCashSales": str(kotCash),
+        "kotCardSales": str(kotCard),
+        "kotUpiSales":  str(kotUpi),
+
+        "takeAwayCashSales": str(takeCash),
+        "takeAwayCardSales": str(takeCard),
+        "takeAwayUpiSales":  str(takeUpi),
+
+        "saleOrderCashSales": str(soCash),
+        "saleOrderCardSales": str(soCard),
+        "saleOrderUpiSales":  str(soUpi),
+
+        "bdCakeCashSales": str(bdCash),
+        "bdCakeCardSales": str(bdCard),
+        "bdCakeUpiSales":  str(bdUpi),
+
+        "totalKotSales": str(totalKotSales),
+        "totalTakeAwaySales": str(totalTakeAwaySales),
+        "totalSaleOrderSales": str(totalSaleOrderSales),
+        "totalBdCakeSales": str(totalBdCakeSales),
+
         "cashDifferenceAmount": str(cashDifference),
         "cashDifferenceType": await get_difference_type(cashDifference),
         "cardDifferenceAmount": str(cardDifference),
         "cardDifferenceType": await get_difference_type(cardDifference),
         "upiDifferenceAmount": str(upiDifference),
         "upiDifferenceType": await get_difference_type(upiDifference),
+
         "totalSystemSales": str(totalSystem),
         "totalManualSales": str(totalManual),
         "totalDifferenceAmount": str(totalDifference),
@@ -140,6 +276,7 @@ async def create_dayend(dayend_data: DayEnd = Body(...)):
         {"_id": result.inserted_id}, {"$set": {"dayEndId": str(result.inserted_id)}}
     )
     return str(result.inserted_id)
+
 
 async def convert_to_string_or_emptys(data):
     if isinstance(data, list):
@@ -167,7 +304,6 @@ async def get_all_dayEnd():
         formatted_dayEnd.append(DayEndPost(**dayEnd_data))
 
     return formatted_dayEnd
-
 
 
 @router.get("/{dayEnd_id}", response_model=DayEnd)

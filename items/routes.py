@@ -18,7 +18,7 @@ async def create_item(item: ItemPost):
 @router.get("/", response_model=List[Item])
 async def get_all_items():
     item_collection = get_collection(db_name="reactfluttertest", collection_name="items")
-    items = await item_collection.find().to_list(1000)
+    items = await item_collection.find().to_list(length=None)
     return [Item(**item, itemid=str(item["_id"])) for item in items]
 
 @router.get("/{itemid}", response_model=Item)

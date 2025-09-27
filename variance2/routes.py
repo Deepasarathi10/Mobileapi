@@ -83,7 +83,7 @@ async def get_all_branchwise_items():
             "tax": item.get("tax", 0),
             "hsnCode": item.get("hsnCode", 0),
             "stockItem": item.get("stockItems", None),  
-            "plateItem": item.get("plateItems", None),  
+            "plateItems": item.get("plateItems", None),  
             "type": item.get("type", None),  
 
         }

@@ -15,7 +15,8 @@ class Variance(BaseModel):
     reorderLevel: Optional[int] = None
     itemName: Optional[str] = None
     tax: Optional[str] = None
-    hsnCode: Optional[str] = None   
+    hsnCode: Optional[str] = None 
+    plateItems:Optional[bool]=None 
 
 class VarianceCreate(BaseModel):
     varianceName:  Optional[str]= None
@@ -30,4 +31,5 @@ class VarianceCreate(BaseModel):
     reorderLevel: Optional[int] = None
     itemName: Optional[str] = None
     tax: Optional[str] = None
-    hsnCode: Optional[str] = None 
+    hsnCode: Optional[str] = None
+    plateItems:Optional[bool]=None

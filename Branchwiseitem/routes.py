@@ -249,6 +249,7 @@ class BranchwiseItem(BaseModel):
     category: Optional[str]= None
     subCategory: Optional[str]= None
     itemGroup: Optional[str]= None
+    plateItems:Optional[bool]=None
     ItemType: Optional[Union[str, None]] = None
     varianceName_Uom: Optional[str]= None
     item_Uom: Optional[str]= None

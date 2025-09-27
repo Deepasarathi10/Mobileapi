@@ -253,24 +253,36 @@ async def update_dispatch(dispatch_id: str, dispatch: DispatchPost):
 
 @router.patch("/{dispatch_id}")
 async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
-    """
-    Partially update an existing dispatch entry.
 
-    :param dispatch_id: The ID of the dispatch entry.
-    :param dispatch_patch: DispatchPost object with fields to update.
-    :return: The updated Dispatch object.
-    """
-    existing_dispatch = get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
+    existing_dispatch = await get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
     if not existing_dispatch:
+        print(f"❌ Dispatch not found in DB for id={dispatch_id}")
         raise HTTPException(status_code=404, detail="Dispatch not found")
 
-    updated_fields = {key: value for key, value in dispatch_patch.dict(exclude_unset=True).items() if value is not None}
+    updated_fields = {
+        key: value
+        for key, value in dispatch_patch.dict(exclude_unset=True).items()
+        if value is not None
+    }
+
+    if "driverName" in updated_fields:
+        employee = await get_employee_collection().find_one({"firstName": updated_fields["driverName"]})
+        if employee:
+            phone_number = employee.get("phoneNumber")
+            updated_fields["driverNumber"] = str(phone_number) if phone_number else ""
+        else:
+            raise HTTPException(status_code=404, detail=f"Employee '{updated_fields['driverName']}' not found")
+
     if updated_fields:
-        result = get_dispatch_collection().update_one({"_id": ObjectId(dispatch_id)}, {"$set": updated_fields})
+        result = await get_dispatch_collection().update_one(
+            {"_id": ObjectId(dispatch_id)},
+            {"$set": updated_fields}
+        )
         if result.modified_count == 0:
+            print(f"❌ Update failed for dispatch {dispatch_id}")
             raise HTTPException(status_code=500, detail="Failed to update Dispatch")
 
-    updated_dispatch = get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
+    updated_dispatch = await get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
     updated_dispatch["_id"] = str(updated_dispatch["_id"])
     return updated_dispatch
 

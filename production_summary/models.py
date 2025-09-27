@@ -24,12 +24,14 @@ class Productionsummary(BaseModel):
     varianceName: Optional[List[str]] = None
     uom: Optional[List[str]] = None
     itemName: Optional[List[str]] = None
+    uom: Optional[List[str]] = None
+    price: Optional[List[float]] = None
     totalqty: Optional[List[int]] = None
     amount: Optional[List[float]] = None   
     weight: Optional[List[float]] = None
     date: Optional[datetime] = None  # ISO 8601 formatted datetime
     category: Optional[List[str]] = None
-    subCategory: Optional[List[str]] = None
+    subcategory: Optional[List[str]] = None
     totalAmount: Optional[float] = None
 
 
@@ -39,9 +41,11 @@ class ProductionsummaryPost(BaseModel):
     uom: Optional[List[str]] = None
     itemName: Optional[List[str]] = None
     qty: Optional[List[int]] = None
+    uom: Optional[List[str]] = None
+    price: Optional[List[float]] = None    
     amount: Optional[List[float]] = None   
     weight: Optional[List[float]] = None
     date: Optional[datetime] = None  # ISO 8601 formatted datetime
     category: Optional[List[str]] = None
-    subCategory: Optional[List[str]] = None
+    subcategory: Optional[List[str]] = None
     totalAmount: Optional[float] = None

@@ -97,7 +97,8 @@ async def get_all_branchwise_items():
             "hsnCode": item.get("hsnCode", 0),
             "webName": item.get("webName", ""),
             "webImage": item.get("webImage", ""),
-            "webStatus": item.get("webStatus", "")
+            "webStatus": item.get("webStatus", ""),
+            "plateItems": item.get("plateItems", ""),
         }
 
         result.append(cleaned_item)

@@ -1,8 +1,7 @@
 import datetime
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from bson import ObjectId
-from fastapi.params import Query
 from .models import Shift, ShiftPost, get_iso_datetime
 from .utils import get_shift_collection
 from Invoice.utils import get_invoice_collection
@@ -82,7 +81,7 @@ async def parse_id(shift_id: str):
         return shift_id
 
 # ---------------- READ ----------------
-@router.get("/", response_model=List[Shift])
+@router.get("/all", response_model=List[Shift])
 async def get_all_shifts(branchName: Optional[str] = Query(default=None, alias="branchName")):
     shift_collection = get_shift_collection()
 
@@ -155,6 +154,115 @@ async def get_diff_type(amount: float) -> str:
         return "no difference"
     return "excess" if amount > 0 else "shortage"
 
+# async def calculate_sales(
+#     branch_name: str,
+#     shift_id: str,
+#     manualCashsales: float = 0.0,
+#     manualCardsales: float = 0.0,
+#     manualUpisales: float = 0.0
+# ):
+#     salesorder_col =  get_salesOrder_collection()
+#     invoice_col =  get_invoice_collection()
+
+#     try:
+#         shift_obj_id = ObjectId(shift_id)
+#     except Exception:
+#         shift_obj_id = None
+
+#     sales_filter = {
+#         "branchName": branch_name,
+#         "shiftId": shift_id
+#     }
+
+#     invoice_filter = {
+#         "branchName": branch_name,
+#         "$or": [
+#             {"shiftId": shift_id},
+#             {"shiftId": shift_obj_id} if shift_obj_id else {}
+#         ]
+#     }
+
+#     salesorders = list(salesorder_col.find(sales_filter))
+#     invoices = list(invoice_col.find(invoice_filter))
+
+#     # System calculated sales
+#     systemCashSales = systemCardSales = systemUpiSales = systemOtherSales = 0.0
+
+#     for sale in salesorders + invoices:
+#         payment_mode = str(sale.get("paymentType", "")).strip().lower()
+
+#         if not payment_mode:
+#             if sale.get("cash"):
+#                 payment_mode = "cash"
+#             elif sale.get("card"):
+#                 payment_mode = "card"
+#             elif sale.get("upi"):
+#                 payment_mode = "upi"
+#             else:
+#                 payment_mode = "other"
+
+#         try:
+#             total_amount = float(sale.get("totalAmount") or 0)
+#         except (ValueError, TypeError):
+#             total_amount = 0.0
+
+#         if payment_mode == "cash":
+#             systemCashSales += total_amount
+#         elif payment_mode == "card":
+#             systemCardSales += total_amount
+#         elif payment_mode == "upi":
+#             systemUpiSales += total_amount
+#         else:
+#             systemOtherSales += total_amount
+
+#     # ✅ Difference Calculations
+#     cashSaleDifferenceAmount = float(manualCashsales or 0) - systemCashSales
+#     cardSaleDifferenceAmount = float(manualCardsales or 0) - systemCardSales
+#     upiSaleDifferenceAmount = float(manualUpisales or 0) - systemUpiSales
+
+#     cashSaleDifferenceType = await get_diff_type(cashSaleDifferenceAmount)
+#     cardSaleDifferenceType = await get_diff_type(cardSaleDifferenceAmount)
+#     upiSaleDifferenceType = await get_diff_type(upiSaleDifferenceAmount)
+
+#     # ✅ Totals
+#     totalSystemSales = systemCashSales + systemCardSales + systemUpiSales + systemOtherSales
+#     totalManualSales = float(manualCashsales or 0) + float(manualCardsales or 0) + float(manualUpisales or 0)
+
+#     totalDifferenceAmount = totalManualSales - totalSystemSales
+#     totalDifferenceType = await get_diff_type(totalDifferenceAmount)
+
+#     result = {
+#         # System values
+#         "systemCashSales": systemCashSales,
+#         "systemCardSales": systemCardSales,
+#         "systemUpiSales": systemUpiSales,
+#         "systemOtherSales": systemOtherSales,
+#         "totalSystemSales": totalSystemSales,
+
+#         # Manual values
+#         "manualCashsales": manualCashsales,
+#         "manualCardsales": manualCardsales,
+#         "manualUpisales": manualUpisales,
+#         "totalManualSales": totalManualSales,
+
+#         # Differences (per mode)
+#         "cashSaleDifferenceAmount": cashSaleDifferenceAmount,
+#         "cashSaleDifferenceType": cashSaleDifferenceType,
+
+#         "cardSaleDifferenceAmount": cardSaleDifferenceAmount,
+#         "cardSaleDifferenceType": cardSaleDifferenceType,
+
+#         "upiSaleDifferenceAmount": upiSaleDifferenceAmount,
+#         "upiSaleDifferenceType": upiSaleDifferenceType,
+
+#         # ✅ Total difference
+#         "totalDifferenceAmount": totalDifferenceAmount,
+#         "totalDifferenceType": totalDifferenceType,
+#     }
+
+#     print("✅ Calculated sales result with differences:", result)
+#     return result
+
 async def calculate_sales(
     branch_name: str,
     shift_id: str,
@@ -174,7 +282,6 @@ async def calculate_sales(
         "branchName": branch_name,
         "shiftId": shift_id
     }
-
     invoice_filter = {
         "branchName": branch_name,
         "$or": [
@@ -183,16 +290,26 @@ async def calculate_sales(
         ]
     }
 
-    # ✅ Await the queries
-    salesorders = await salesorder_col.find(sales_filter).to_list(length=None)
-    invoices = await invoice_col.find(invoice_filter).to_list(length=None)
+    salesorders = list(salesorder_col.find(sales_filter))
+    invoices = list(invoice_col.find(invoice_filter))
 
-    # System calculated sales
-    systemCashSales = systemCardSales = systemUpiSales = systemOtherSales = 0.0
+    # Totals across all types
+    systemCashSales = 0.0
+    systemCardSales = 0.0
+    systemUpiSales = 0.0
+    systemOtherSales = 0.0
 
-    for sale in salesorders + invoices:
+    # Per-type breakdown dictionaries
+    # e.g. for KOT / TakeAway / SaleOrder / BDCake
+    kot_cash = kot_card = kot_upi = 0.0
+    take_cash = take_card = take_upi = 0.0
+    so_cash = so_card = so_upi = 0.0
+    bd_cash = bd_card = bd_upi = 0.0
+    other_cash = other_card = other_upi = 0.0  # for fallback types
+
+    all_sales = salesorders + invoices
+    for sale in all_sales:
         payment_mode = str(sale.get("paymentType", "")).strip().lower()
-
         if not payment_mode:
             if sale.get("cash"):
                 payment_mode = "cash"
@@ -203,63 +320,138 @@ async def calculate_sales(
             else:
                 payment_mode = "other"
 
-        try:
-            total_amount = float(sale.get("totalAmount") or 0)
-        except (ValueError, TypeError):
-            total_amount = 0.0
-
+        # Determine amount from the fields if present, else fallback to totalAmount
+        amt = 0.0
+        # If the JSON has "cash", "card", "upi" fields, you might want to prefer them
         if payment_mode == "cash":
-            systemCashSales += total_amount
+            amt = float(sale.get("cash") or sale.get("totalAmount") or 0)
         elif payment_mode == "card":
-            systemCardSales += total_amount
+            amt = float(sale.get("card") or sale.get("totalAmount") or 0)
         elif payment_mode == "upi":
-            systemUpiSales += total_amount
+            amt = float(sale.get("upi") or sale.get("totalAmount") or 0)
         else:
-            systemOtherSales += total_amount
+            amt = float(sale.get("totalAmount") or 0)
 
-    # ✅ Difference Calculations
-    cashSaleDifferenceAmount = float(manualCashsales or 0) - systemCashSales
-    cardSaleDifferenceAmount = float(manualCardsales or 0) - systemCardSales
-    upiSaleDifferenceAmount = float(manualUpisales or 0) - systemUpiSales
+        # Add to total system aggregates
+        if payment_mode == "cash":
+            systemCashSales += amt
+        elif payment_mode == "card":
+            systemCardSales += amt
+        elif payment_mode == "upi":
+            systemUpiSales += amt
+        else:
+            systemOtherSales += amt
 
-    cashSaleDifferenceType = await get_diff_type(cashSaleDifferenceAmount)
-    cardSaleDifferenceType = await get_diff_type(cardSaleDifferenceAmount)
-    upiSaleDifferenceType = await get_diff_type(upiSaleDifferenceAmount)
+        # Get salesType to decide which bucket
+        stype = str(sale.get("salesType", "") or "").strip().lower()
+        # Map to bucket references
+        if stype == "dinning" or stype == "dining" or stype == "kot":
+            # KOT / dining
+            if payment_mode == "cash":
+                kot_cash += amt
+            elif payment_mode == "card":
+                kot_card += amt
+            elif payment_mode == "upi":
+                kot_upi += amt
+        elif stype == "takeaway" or stype == "take away":
+            if payment_mode == "cash":
+                take_cash += amt
+            elif payment_mode == "card":
+                take_card += amt
+            elif payment_mode == "upi":
+                take_upi += amt
+        elif stype == "saleorder" or stype == "sale_order":
+            if payment_mode == "cash":
+                so_cash += amt
+            elif payment_mode == "card":
+                so_card += amt
+            elif payment_mode == "upi":
+                so_upi += amt
+        elif stype == "birthdaycake" or stype == "bdcake":
+            if payment_mode == "cash":
+                bd_cash += amt
+            elif payment_mode == "card":
+                bd_card += amt
+            elif payment_mode == "upi":
+                bd_upi += amt
+        else:
+            # fallback / others
+            if payment_mode == "cash":
+                other_cash += amt
+            elif payment_mode == "card":
+                other_card += amt
+            elif payment_mode == "upi":
+                other_upi += amt
 
-    # ✅ Totals
+    # Differences
+    cashDiff = float(manualCashsales or 0) - systemCashSales
+    cardDiff = float(manualCardsales or 0) - systemCardSales
+    upiDiff = float(manualUpisales or 0) - systemUpiSales
+
+    cashDiffType = await get_diff_type(cashDiff)
+    cardDiffType = await get_diff_type(cardDiff)
+    upiDiffType = await get_diff_type(upiDiff)
+
+    # Totals
     totalSystemSales = systemCashSales + systemCardSales + systemUpiSales + systemOtherSales
     totalManualSales = float(manualCashsales or 0) + float(manualCardsales or 0) + float(manualUpisales or 0)
 
-    totalDifferenceAmount = totalManualSales - totalSystemSales
-    totalDifferenceType = await get_diff_type(totalDifferenceAmount)
+    totalDiff = totalManualSales - totalSystemSales
+    totalDiffType = await get_diff_type(totalDiff)
+    
+    totalKotSales = kot_cash + kot_card + kot_upi
+    totalTakeAwaySales = take_cash + take_card + take_upi
+    totalSaleOrderSales = so_cash + so_card + so_upi
+    totalBdCakeSales = bd_cash + bd_card + bd_upi
+    
+   
 
-    result = {
+    return {
+        # Totals
         "systemCashSales": systemCashSales,
         "systemCardSales": systemCardSales,
         "systemUpiSales": systemUpiSales,
         "systemOtherSales": systemOtherSales,
         "totalSystemSales": totalSystemSales,
 
+        # Manual entries
         "manualCashsales": manualCashsales,
         "manualCardsales": manualCardsales,
         "manualUpisales": manualUpisales,
         "totalManualSales": totalManualSales,
 
-        "cashSaleDifferenceAmount": cashSaleDifferenceAmount,
-        "cashSaleDifferenceType": cashSaleDifferenceType,
+        # Differences
+        "cashSaleDifferenceAmount": cashDiff,
+        "cashSaleDifferenceType": cashDiffType,
+        "cardSaleDifferenceAmount": cardDiff,
+        "cardSaleDifferenceType": cardDiffType,
+        "upiSaleDifferenceAmount": upiDiff,
+        "upiSaleDifferenceType": upiDiffType,
+        "totalDifferenceAmount": totalDiff,
+        "totalDifferenceType": totalDiffType,
 
-        "cardSaleDifferenceAmount": cardSaleDifferenceAmount,
-        "cardSaleDifferenceType": cardSaleDifferenceType,
-
-        "upiSaleDifferenceAmount": upiSaleDifferenceAmount,
-        "upiSaleDifferenceType": upiSaleDifferenceType,
-
-        "totalDifferenceAmount": totalDifferenceAmount,
-        "totalDifferenceType": totalDifferenceType,
+        # Per-type breakdown (you’ll store these in Shift document)
+        "kotCashSales": kot_cash,
+        "kotCardSales": kot_card,
+        "kotUpiSales": kot_upi,
+        "takeAwayCashSales": take_cash,
+        "takeAwayCardSales": take_card,
+        "takeAwayUpiSales": take_upi,
+        "saleOrderCashSales": so_cash,
+        "saleOrderCardSales": so_card,
+        "saleOrderUpiSales": so_upi,
+        "bdCakeCashSales": bd_cash,
+        "bdCakeCardSales": bd_card,
+        "bdCakeUpiSales": bd_upi,
+        "otherCashSales": other_cash,
+        "otherCardSales": other_card,
+        "otherUpiSales": other_upi,
+        
+        "totalKotSales": totalKotSales,
+        "totalTakeAwaySales": totalTakeAwaySales,
+        "totalSaleOrderSales": totalSaleOrderSales,
+        "totalBdCakeSales": totalBdCakeSales,
     }
-
-    print("✅ Calculated sales result with differences:", result)
-    return result
 
 async def safe_float(value, default=0.0):
     try:
