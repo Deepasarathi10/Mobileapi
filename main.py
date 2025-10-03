@@ -119,6 +119,8 @@ routes_info = [
 	{"module": "fgsummary.routes", "prefix": "/fastapi/fgsummaries", "tags": ["FG Summary"]},
 	{"module": "sfgtofg.routes", "prefix": "/fastapi/sfgtofgs", "tags": ["SFG to FG"]},
 	{"module": "rmclosing.routes", "prefix": "/fastapi/rmclosings", "tags": ["Rm Closing"]},
+	{"module": "storeimport.routes", "prefix": "/fastapi/storeimports", "tags": ["StoreImport"]},
+
 
 
 
