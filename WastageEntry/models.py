@@ -4,6 +4,7 @@ from typing import List, Optional
 
 class WastageEntry(BaseModel):
     wastageId: Optional[str] = None  # Define _id field explicitly
+    wastageEntryNumber: Optional[str] = None  # NEW
     varianceName:Optional[list[str]]=None
     # category:Optional[list[str]]=None
     uom: Optional[list[str]] = None

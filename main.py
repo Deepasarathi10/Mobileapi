@@ -118,6 +118,8 @@ routes_info = [
 	{"module": "fgsales.routes", "prefix": "/fastapi/fgsales", "tags": ["FG Sales"]},
 	{"module": "fgsummary.routes", "prefix": "/fastapi/fgsummaries", "tags": ["FG Summary"]},
 	{"module": "sfgtofg.routes", "prefix": "/fastapi/sfgtofgs", "tags": ["SFG to FG"]},
+	{"module": "rmclosing.routes", "prefix": "/fastapi/rmclosings", "tags": ["Rm Closing"]},
+
 
 
     # Daily activities API 

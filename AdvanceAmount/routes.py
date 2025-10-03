@@ -14,7 +14,7 @@ router = APIRouter()
 async def get_all_amounts():
     try:
         # Fetch amounts sorted by createdDate in descending order (LIFO)
-        amounts = list(get_amount_collection().find().sort("createdDate", -1))
+        amounts = await get_amount_collection().find().sort("createdDate", -1).to_list(length=None)
         amount_store = []
         
         for amount_data in amounts:
@@ -34,7 +34,7 @@ async def create_amount(amount_data: AdvanceAmountPost):
         new_amount = amount_data.dict()
         new_amount["createdDate"] = datetime.utcnow()  # Automatically set createdDate
         
-        result = get_amount_collection().insert_one(new_amount)
+        result = await get_amount_collection().insert_one(new_amount)
         return str(result.inserted_id)
     except Exception as e:
         logging.error(f"Error occurred: {e}")
@@ -44,7 +44,7 @@ async def create_amount(amount_data: AdvanceAmountPost):
 @router.get("/{amount_id}", response_model=AdvanceAmount)
 async def get_amount_by_id(amount_id: str):
     try:
-        amount = get_amount_collection().find_one({"_id": ObjectId(amount_id)})
+        amount = await get_amount_collection().find_one({"_id": ObjectId(amount_id)})
         if amount:
             amount["amountId"] = str(amount["_id"])
             del amount["_id"]
@@ -59,7 +59,7 @@ async def get_amount_by_id(amount_id: str):
 @router.patch("/{amount_id}", response_model=AdvanceAmount)
 async def patch_amount(amount_id: str, amount_patch: AdvanceAmountPost):
     try:
-        existing_amount = get_amount_collection().find_one({"_id": ObjectId(amount_id)})
+        existing_amount = await get_amount_collection().find_one({"_id": ObjectId(amount_id)})
         if not existing_amount:
             raise HTTPException(status_code=404, detail="Amount not found")
         
@@ -70,28 +70,16 @@ async def patch_amount(amount_id: str, amount_patch: AdvanceAmountPost):
         updated_fields["updatedDate"] = datetime.utcnow()  # Automatically update updatedDate
         
         if updated_fields:
-            result = get_amount_collection().update_one(
+            result = await get_amount_collection().update_one(
                 {"_id": ObjectId(amount_id)}, {"$set": updated_fields}
             )
             if result.modified_count == 0:
                 raise HTTPException(status_code=500, detail="Failed to update Amount")
         
-        updated_amount = get_amount_collection().find_one({"_id": ObjectId(amount_id)})
+        updated_amount = await get_amount_collection().find_one({"_id": ObjectId(amount_id)})
         updated_amount["amountId"] = str(updated_amount["_id"])
         del updated_amount["_id"]
         return AdvanceAmount(**updated_amount)
     except Exception as e:
         logging.error(f"Error occurred while updating amount: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
-
-# ## Delete an Amount
-# @router.delete("/{amount_id}")
-# async def delete_amount(amount_id: str):
-#     try:
-#         result = get_amount_collection().delete_one({"_id": ObjectId(amount_id)})
-#         if result.deleted_count == 0:
-#             raise HTTPException(status_code=404, detail="Amount not found")
-#         return {"message": "Amount deleted successfully"}
-#     except Exception as e:
-#         logging.error(f"Error occurred while deleting amount: {e}")
-#         raise HTTPException(status_code=500, detail="Internal Server Error")

@@ -1,26 +1,22 @@
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from bson import ObjectId
+from bson.errors import InvalidId
+from datetime import datetime
 from .models import ItemType, ItemTypePost
 from .utils import get_itemtransfer_collection
-from datetime import datetime
-
-
-
 
 router = APIRouter()
 
-
-
-
-
+# ------------------- CREATE -------------------
 @router.post("/", response_model=str, status_code=status.HTTP_201_CREATED)
 async def create_itemtransfer(itemtransfer: ItemTypePost):
     new_itemtransfer_data = itemtransfer.model_dump()
-    result = get_itemtransfer_collection().insert_one(new_itemtransfer_data)
+    result = await get_itemtransfer_collection().insert_one(new_itemtransfer_data)
     return str(result.inserted_id)
 
 
+# ------------------- GET ALL WITH FILTERS -------------------
 @router.get("/", response_model=List[ItemType])
 async def get_all_itemtransfer(
     from_branch: Optional[str] = Query(None),
@@ -53,24 +49,32 @@ async def get_all_itemtransfer(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use DD-MM-YYYY.")
 
-    # Priority filter fields
+    # Priority date fields
     datetime_fields = ["requestDateTime", "sentDateTime", "receiveDateTime"]
 
     for field in datetime_fields:
         query = base_query.copy()
         if date_filter:
             query[field] = date_filter
-        results = list(get_itemtransfer_collection().find(query))
+        results = await get_itemtransfer_collection().find(query).to_list(length=None)
         if results:
             for item in results:
                 item["itemtransferId"] = str(item["_id"])
             return [ItemType(**item) for item in results]
 
-    # If no matching data in any datetime field
+    # No matching data
     return []
+
+
+# ------------------- GET BY ID -------------------
 @router.get("/{itemtransfer_id}", response_model=ItemType)
 async def get_itemtransfer_by_id(itemtransfer_id: str):
-    itemtransfer = get_itemtransfer_collection().find_one({"_id": ObjectId(itemtransfer_id)})
+    try:
+        object_id = ObjectId(itemtransfer_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid itemtransfer_id")
+
+    itemtransfer = await get_itemtransfer_collection().find_one({"_id": object_id})
     if itemtransfer:
         itemtransfer["itemtransferId"] = str(itemtransfer["_id"])
         return ItemType(**itemtransfer)
@@ -78,25 +82,39 @@ async def get_itemtransfer_by_id(itemtransfer_id: str):
         raise HTTPException(status_code=404, detail="Itemtransfer not found")
 
 
+# ------------------- PATCH -------------------
 @router.patch("/{itemtransfer_id}")
 async def patch_itemtransfer(itemtransfer_id: str, itemtransfer_patch: ItemTypePost):
-    existing_itemtransfer = get_itemtransfer_collection().find_one({"_id": ObjectId(itemtransfer_id)})
+    try:
+        object_id = ObjectId(itemtransfer_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid itemtransfer_id")
+
+    existing_itemtransfer = await get_itemtransfer_collection().find_one({"_id": object_id})
     if not existing_itemtransfer:
         raise HTTPException(status_code=404, detail="Itemtransfer not found")
 
     updated_fields = {key: value for key, value in itemtransfer_patch.model_dump(exclude_unset=True).items() if value is not None}
+
     if updated_fields:
-        result = get_itemtransfer_collection().update_one({"_id": ObjectId(itemtransfer_id)}, {"$set": updated_fields})
+        result = await get_itemtransfer_collection().update_one({"_id": object_id}, {"$set": updated_fields})
         if result.modified_count == 0:
             raise HTTPException(status_code=500, detail="Failed to update Itemtransfer")
 
-    updated_itemtransfer = get_itemtransfer_collection().find_one({"_id": ObjectId(itemtransfer_id)})
-    updated_itemtransfer["_id"] = str(updated_itemtransfer["_id"])
+    updated_itemtransfer = await get_itemtransfer_collection().find_one({"_id": object_id})
+    updated_itemtransfer["itemtransferId"] = str(updated_itemtransfer["_id"])
     return updated_itemtransfer
 
+
+# ------------------- DELETE -------------------
 @router.delete("/{itemtransfer_id}")
 async def delete_itemtransfer(itemtransfer_id: str):
-    result = get_itemtransfer_collection().delete_one({"_id": ObjectId(itemtransfer_id)})
+    try:
+        object_id = ObjectId(itemtransfer_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid itemtransfer_id")
+
+    result = await get_itemtransfer_collection().delete_one({"_id": object_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Itemtransfer not found")
     return {"message": "Itemtransfer deleted successfully"}

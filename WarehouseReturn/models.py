@@ -4,6 +4,7 @@ from typing import List, Optional
 
 class WarehouseReturn(BaseModel):
     warehouseReturnId: Optional[str] = None  # Define _id field explicitly
+    warehouseReturnNumber: Optional[str] = None  # NEW
     varianceName:Optional[list[str]]=None
     # category:Optional[list[str]]=None
     uom: Optional[list[str]] = None
@@ -17,6 +18,7 @@ class WarehouseReturn(BaseModel):
     warehouseName: Optional[str] = None
     driverName:Optional[str] = None
     vehicleNo: Optional[str] = None
+    branchName:Optional[str] = None
     date: Optional[datetime]= Field(default_factory=datetime.now)
     reason: Optional[str] = None
     
@@ -35,5 +37,6 @@ class WarehouseReturnPost(BaseModel):
     warehouseName: Optional[str] = None
     driverName:Optional[str] = None
     vehicleNo: Optional[str] = None
+    branchName:Optional[str] = None
     date: Optional[datetime]= Field(default_factory=datetime.now)
     reason: Optional[str] = None
