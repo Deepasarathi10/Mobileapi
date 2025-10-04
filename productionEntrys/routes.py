@@ -13,13 +13,25 @@ router = APIRouter()
 async def create_dispatch(dispatch: ProductionEntryPost):
     coll = get_productionEntry_collection()
 
+    # find the last document with a productionEntryNumber
     last_doc = await coll.find_one(
         {"productionEntryNumber": {"$exists": True}},
         sort=[("productionEntryNumber", DESCENDING)]
     )
-    last_number = last_doc["productionEntryNumber"] if last_doc else 0
-    next_dispatch_number = last_number + 1
 
+    # Extract the numeric part from "PE000X"
+    if last_doc and "productionEntryNumber" in last_doc:
+        last_number_str = str(last_doc["productionEntryNumber"]).replace("PE", "")
+        last_number = int(last_number_str)
+    else:
+        last_number = 0
+
+    # Increment
+    next_number = last_number + 1
+    # Format as PE0001, PE0002, etc.
+    next_dispatch_number = f"PE{next_number:04d}"
+
+    # build new document
     new_dispatch = dispatch.model_dump()
     new_dispatch["productionEntryNumber"] = next_dispatch_number
 

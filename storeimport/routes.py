@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 import pytz
 from .models import PurchaseSubcategory, PurchaseSubcategoryPost, get_iso_datetime
 from .utils import get_purchaseitem_collection, get_purchasesubcategory_collection
-from storeDispatch.utils import get_dispatch_collection , get_purchasesubcategory_collection
+from storeDispatch.utils import get_dispatch_collection
 
 
 
@@ -150,13 +150,27 @@ async def create_purchasesubcategory(purchasesubcategory: PurchaseSubcategoryPos
 
 
 @router.get("/", response_model=List[PurchaseSubcategory])
-async def get_all_purchasesubcategory():
-    """Get all purchase subcategories."""
-    purchasesubcategories = await get_purchasesubcategory_collection().find().to_list(length=None)
-    formatted_purchasesubcategory = [
-        {**sub, "dispatchId": str(sub["_id"])} for sub in purchasesubcategories
-    ]
-    return [PurchaseSubcategory(**sub) for sub in formatted_purchasesubcategory]
+async def get_all_sfgitems():
+    cursor = get_purchasesubcategory_collection().find()
+    sfgitems_list = []
+    async for sfgitem in cursor:
+        # Convert ObjectId
+        sfgitem["dispatchId"] = str(sfgitem["_id"])
+
+        # Convert date string to datetime (if exists and is a string)
+        if "date" in sfgitem and isinstance(sfgitem["date"], str):
+            try:
+                sfgitem["date"] = datetime.fromisoformat(sfgitem["date"])
+            except ValueError:
+                # Fallback if not ISO format
+                try:
+                    sfgitem["date"] = datetime.strptime(sfgitem["date"], "%Y-%m-%d")
+                except Exception:
+                    sfgitem["date"] = None  # or raise HTTPException
+
+        sfgitems_list.append(PurchaseSubcategory(**sfgitem))
+
+    return sfgitems_list
 
 
 @router.get("/{purchasesubcategory_id}", response_model=PurchaseSubcategory)

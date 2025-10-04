@@ -32,6 +32,7 @@ class ProductionEntry(BaseModel):
     weight: Optional[List[float]] = None
     qty: Optional[List[int]] = None
     amount: Optional[List[float]] = None
+    
     cancelVarianceName: Optional[List[str]] = None
     cancelUom: Optional[List[str]] = None
     cancelItemName: Optional[List[str]] = None
@@ -40,6 +41,17 @@ class ProductionEntry(BaseModel):
     cancelWeight: Optional[List[float]] = None
     cancelQty: Optional[List[int]] = None
     cancelAmount: Optional[List[float]] = None
+    
+    editVarianceName: Optional[List[str]] = None
+    editUom: Optional[List[str]] = None
+    editItemName: Optional[List[str]] = None
+    editPrice: Optional[List[int]] = None
+    editItemCode: Optional[List[str]] = None
+    editWeight: Optional[List[float]] = None
+    editQty: Optional[List[int]] = None
+    editAmount: Optional[List[float]] = None
+    editreason :Optional[str] = None
+    
     totalAmount: Optional[Any] = None
     warehouseName: Optional[str] = None
     date: Optional[datetime] = None  # ISO 8601 formatted datetime
@@ -57,6 +69,7 @@ class ProductionEntryPost(BaseModel):
     weight: Optional[List[float]] = None
     qty: Optional[List[int]] = None
     amount: Optional[List[float]] = None
+    
     cancelVarianceName: Optional[List[str]] = None
     cancelUom: Optional[List[str]] = None
     cancelItemName: Optional[List[str]] = None
@@ -65,6 +78,17 @@ class ProductionEntryPost(BaseModel):
     cancelWeight: Optional[List[float]] = None
     cancelQty: Optional[List[int]] = None
     cancelAmount: Optional[List[float]] = None
+    
+    editVarianceName: Optional[List[str]] = None
+    editUom: Optional[List[str]] = None
+    editItemName: Optional[List[str]] = None
+    editPrice: Optional[List[int]] = None
+    editItemCode: Optional[List[str]] = None
+    editWeight: Optional[List[float]] = None
+    editQty: Optional[List[int]] = None
+    editAmount: Optional[List[float]] = None
+    editreason :Optional[str] = None
+    
     totalAmount: Optional[str] = None
     warehouseName: Optional[str] = None
     date: Optional[str] = Field(default_factory=lambda: get_iso_datetime())

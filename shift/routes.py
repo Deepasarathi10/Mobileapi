@@ -262,6 +262,12 @@ async def get_diff_type(amount: float) -> str:
 
 #     print("✅ Calculated sales result with differences:", result)
 #     return result
+async def safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
 
 async def calculate_sales(
     branch_name: str,
@@ -290,8 +296,9 @@ async def calculate_sales(
         ]
     }
 
-    salesorders = list(salesorder_col.find(sales_filter))
-    invoices = list(invoice_col.find(invoice_filter))
+    # ✅ Await async DB calls
+    salesorders = await salesorder_col.find(sales_filter).to_list(length=None)
+    invoices = await invoice_col.find(invoice_filter).to_list(length=None)
 
     # Totals across all types
     systemCashSales = 0.0
@@ -300,12 +307,11 @@ async def calculate_sales(
     systemOtherSales = 0.0
 
     # Per-type breakdown dictionaries
-    # e.g. for KOT / TakeAway / SaleOrder / BDCake
     kot_cash = kot_card = kot_upi = 0.0
     take_cash = take_card = take_upi = 0.0
     so_cash = so_card = so_upi = 0.0
     bd_cash = bd_card = bd_upi = 0.0
-    other_cash = other_card = other_upi = 0.0  # for fallback types
+    other_cash = other_card = other_upi = 0.0  # fallback types
 
     all_sales = salesorders + invoices
     for sale in all_sales:
@@ -322,7 +328,6 @@ async def calculate_sales(
 
         # Determine amount from the fields if present, else fallback to totalAmount
         amt = 0.0
-        # If the JSON has "cash", "card", "upi" fields, you might want to prefer them
         if payment_mode == "cash":
             amt = float(sale.get("cash") or sale.get("totalAmount") or 0)
         elif payment_mode == "card":
@@ -342,32 +347,30 @@ async def calculate_sales(
         else:
             systemOtherSales += amt
 
-        # Get salesType to decide which bucket
+        # SalesType breakdown
         stype = str(sale.get("salesType", "") or "").strip().lower()
-        # Map to bucket references
-        if stype == "dinning" or stype == "dining" or stype == "kot":
-            # KOT / dining
+        if stype in ["dinning", "dining", "kot"]:
             if payment_mode == "cash":
                 kot_cash += amt
             elif payment_mode == "card":
                 kot_card += amt
             elif payment_mode == "upi":
                 kot_upi += amt
-        elif stype == "takeaway" or stype == "take away":
+        elif stype in ["takeaway", "take away"]:
             if payment_mode == "cash":
                 take_cash += amt
             elif payment_mode == "card":
                 take_card += amt
             elif payment_mode == "upi":
                 take_upi += amt
-        elif stype == "saleorder" or stype == "sale_order":
+        elif stype in ["saleorder", "sale_order"]:
             if payment_mode == "cash":
                 so_cash += amt
             elif payment_mode == "card":
                 so_card += amt
             elif payment_mode == "upi":
                 so_upi += amt
-        elif stype == "birthdaycake" or stype == "bdcake":
+        elif stype in ["birthdaycake", "bdcake"]:
             if payment_mode == "cash":
                 bd_cash += amt
             elif payment_mode == "card":
@@ -395,16 +398,13 @@ async def calculate_sales(
     # Totals
     totalSystemSales = systemCashSales + systemCardSales + systemUpiSales + systemOtherSales
     totalManualSales = float(manualCashsales or 0) + float(manualCardsales or 0) + float(manualUpisales or 0)
-
     totalDiff = totalManualSales - totalSystemSales
     totalDiffType = await get_diff_type(totalDiff)
-    
+
     totalKotSales = kot_cash + kot_card + kot_upi
     totalTakeAwaySales = take_cash + take_card + take_upi
     totalSaleOrderSales = so_cash + so_card + so_upi
     totalBdCakeSales = bd_cash + bd_card + bd_upi
-    
-   
 
     return {
         # Totals
@@ -430,7 +430,7 @@ async def calculate_sales(
         "totalDifferenceAmount": totalDiff,
         "totalDifferenceType": totalDiffType,
 
-        # Per-type breakdown (you’ll store these in Shift document)
+        # Per-type breakdown
         "kotCashSales": kot_cash,
         "kotCardSales": kot_card,
         "kotUpiSales": kot_upi,
@@ -446,51 +446,42 @@ async def calculate_sales(
         "otherCashSales": other_cash,
         "otherCardSales": other_card,
         "otherUpiSales": other_upi,
-        
+
         "totalKotSales": totalKotSales,
         "totalTakeAwaySales": totalTakeAwaySales,
         "totalSaleOrderSales": totalSaleOrderSales,
         "totalBdCakeSales": totalBdCakeSales,
     }
 
-async def safe_float(value, default=0.0):
-    try:
-        return float(value)
-    except (ValueError, TypeError):
-        return default
 
-
+# --------------------- Close Shift API ---------------------
 @router.patch("/close-shift/{shift_id}", response_model=Shift)
 async def close_shift(shift_id: str, shift_update: ShiftPost):
-    shift_collection = get_shift_collection()  # Await to get collection
-    parsed_id = await parse_id(shift_id)  # Await to get the actual ID
+    shift_collection = get_shift_collection()
+    parsed_id = await parse_id(shift_id)
 
     existing_shift = await shift_collection.find_one({"_id": parsed_id})
     if not existing_shift:
         raise HTTPException(status_code=404, detail="Shift not found")
 
-    # Get the updated fields from the model
     updated_fields = shift_update.model_dump(exclude_unset=True)
-    closing_time = await get_iso_datetime()
-    updated_fields["ClosingDateTime"] = closing_time
+    updated_fields["ClosingDateTime"] = await get_iso_datetime()
 
-    # Extract sales values (already validated as floats by Pydantic)
     manualCashsales = updated_fields.get("manualCashsales", 0.0)
     manualCardsales = updated_fields.get("manualCardsales", 0.0)
     manualUpisales = updated_fields.get("manualUpisales", 0.0)
 
-    # Calculate sales data
+    # ✅ Await calculate_sales
     sales_data = await calculate_sales(
         branch_name=existing_shift["branchName"],
         shift_id=shift_id,
-        manualCashsales = await safe_float(manualCashsales),
-        manualCardsales = await safe_float(manualCardsales),
-        manualUpisales = await safe_float(manualUpisales)
+        manualCashsales=await safe_float(manualCashsales),
+        manualCardsales=await safe_float(manualCardsales),
+        manualUpisales=await safe_float(manualUpisales)
     )
 
     updated_fields.update(sales_data)
 
-    # Update the shift in the database
     result = await shift_collection.update_one(
         {"_id": parsed_id},
         {"$set": updated_fields}
@@ -499,7 +490,6 @@ async def close_shift(shift_id: str, shift_update: ShiftPost):
     if result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Failed to close shift.")
 
-    # Fetch updated shift
     updated_shift = await shift_collection.find_one({"_id": parsed_id})
     shift_data = {
         key: await convert_to_string_or_emptys(value)
@@ -508,7 +498,6 @@ async def close_shift(shift_id: str, shift_update: ShiftPost):
     shift_data["shiftId"] = str(updated_shift["_id"])
 
     return Shift(**shift_data)
-
 
 @router.patch("/dayend/{branch_name}", response_model=List[Shift])
 async def close_shifts_and_mark_dayend(branch_name: str):

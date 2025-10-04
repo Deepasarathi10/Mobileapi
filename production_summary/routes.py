@@ -1,3 +1,4 @@
+
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from datetime import datetime
@@ -40,7 +41,7 @@ def flatten_items(item):
 async def get_grouped_productionsummary_entries(
     date: Optional[str] = Query(None, description="Filter by specific date (DD-MM-YYYY or YYYY-MM-DD)"),
 ):
-    query = {"status": {"$ne": "Cancel"}}
+    query = {"status": {"$ne": "Cancel"}}  # ✅ Exclude only cancelled
     filter_date = None
 
     # ---------------- Date filter ----------------
@@ -55,11 +56,20 @@ async def get_grouped_productionsummary_entries(
 
     productionEntry_collection = get_productionEntry_collection()
     variance2_collection = get_variences_collection()
+    
+    count = await variance2_collection.count_documents({})
+    print("Total documents in variance2_collection:", count)
+
+    sample = await variance2_collection.find_one({})
+    print("Sample document:", sample)
+
 
     # ---------------- Variance map ----------------
     variance2_list = await variance2_collection.find(
-        {}, {"varianceName": 1, "varianceItemcode": 1, "category": 1, "subCategory": 1}
+        {}, {"varianceName": 1, "varianceItemcode": 1,"category": 1,  "subcategory": 1} 
     ).to_list(length=None)
+    
+    print("variance list", variance2_list)
 
     variance2_map = {}
     for v in variance2_list:
@@ -68,7 +78,7 @@ async def get_grouped_productionsummary_entries(
             variance2_map[name] = {
                 "itemCode": v.get("varianceItemcode", ""),
                 "category": v.get("category") or "",
-                "subCategory": v.get("subCategory") or "",
+                "subcategory": v.get("subcategory") or "",  # ✅ fixed key
             }
 
     # ---------------- Fetch production entries ----------------
@@ -84,24 +94,30 @@ async def get_grouped_productionsummary_entries(
         uoms = flatten_items(entry.get("uom", []))
 
         for idx, name in enumerate(item_names):
-            mapped_data = variance2_map.get(name, {"itemCode": "", "category": "", "subCategory": ""})
+            mapped_data = variance2_map.get(name, {"itemCode": "", "category": "", "subcategory": ""})
 
             qty = int(qtys[idx]) if idx < len(qtys) and str(qtys[idx]).isdigit() else 0
             price = float(prices[idx]) if idx < len(prices) else 0.0
             amount = qty * price
             uom = uoms[idx] if idx < len(uoms) else ""
 
-            # Use variance subCategory if production entry subCategory empty
+            # Use entry values if exist, else fallback to variance2
+            category = ""
             subcategory = ""
-            if entry.get("subCategory") and idx < len(entry["subCategory"]):
-                subcategory = entry["subCategory"][idx]
+            if entry.get("category") and idx < len(entry["category"]):
+                category = entry["category"][idx] or ""
             else:
-                subcategory = mapped_data["subCategory"]
+                category = mapped_data["category"]
 
-            key = (name, mapped_data["category"], subcategory, uom)
+            if entry.get("subcategory") and idx < len(entry["subcategory"]):
+                subcategory = entry["subcategory"][idx] or ""
+            else:
+                subcategory = mapped_data["subcategory"]
+
+            key = (name, category, subcategory, uom)
             grouped[key]["qty"] += qty
             grouped[key]["amount"] += amount
-            grouped[key]["price"] = price
+            grouped[key]["price"] = price   # latest price for that item
             grouped[key]["uom"] = uom
 
     # ---------------- SINGLE RECORD FORMAT ----------------
@@ -116,13 +132,13 @@ async def get_grouped_productionsummary_entries(
         uoms.append(uom)
         qtys.append(values["qty"])
         amounts.append(values["amount"])
-        prices.append(values["price"])  # numeric array
+        prices.append(values["price"])
 
     single_record = Productionsummary(
         varianceName=variance_names,
         itemName=item_names,
         category=categories,
-        subCategory=subcategories,
+        subcategory=subcategories,   # ✅ fixed to match schema
         uom=uoms,
         totalqty=qtys,
         price=prices,
@@ -130,5 +146,5 @@ async def get_grouped_productionsummary_entries(
         totalAmount=sum(amounts),
         date=filter_date
     )
-
     return [single_record]
+    
