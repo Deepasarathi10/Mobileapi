@@ -4,10 +4,9 @@ import pytz
 from fastapi import HTTPException, status, APIRouter, Query
 from typing import List, Optional
 from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorClient
 
-from bankcash.models import BankDeposit, BankDepositPost
-from bankcash.utils import get_bank_deposit_collection
+from .models import BankDeposit, BankDepositPost
+from .utils import get_bank_deposit_collection
 
 # ----------------- Logging -----------------
 logging.basicConfig(level=logging.INFO)
@@ -54,16 +53,18 @@ async def get_all_bank_deposits(
 
             if start_date:
                 start_dt = datetime.strptime(start_date, "%d-%m-%Y")
-                start_dt = IST.localize(start_dt).astimezone(UTC).replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
+                # Start of day in IST → UTC
+                start_dt = IST.localize(
+                    start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+                ).astimezone(UTC)
                 query_filter["date"]["$gte"] = start_dt
 
             if end_date:
                 end_dt = datetime.strptime(end_date, "%d-%m-%Y")
-                end_dt = IST.localize(end_dt).astimezone(UTC).replace(
-                    hour=23, minute=59, second=59, microsecond=999999
-                )
+                # End of day in IST → UTC
+                end_dt = IST.localize(
+                    end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+                ).astimezone(UTC)
                 query_filter["date"]["$lte"] = end_dt
 
         collection = get_bank_deposit_collection()
@@ -84,7 +85,7 @@ async def get_all_bank_deposits(
 async def create_bank_deposit(deposit_data: BankDepositPost):
     try:
         deposit_dict = deposit_data.dict(exclude={"cashId"})
-        deposit_dict["date"] = datetime.now(UTC)  # Store in UTC
+        deposit_dict["date"] = datetime.now(UTC)  # Always store in UTC
         collection = get_bank_deposit_collection()
         result = await collection.insert_one(deposit_dict)
         return str(result.inserted_id)
@@ -135,14 +136,21 @@ async def delete_bank_deposit(deposit_id: str):
 @router.get("/check", response_model=dict)
 async def check_today_deposit(type: str, branchName: str):
     try:
-        today_start = datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = datetime.now(IST).replace(hour=23, minute=59, second=59, microsecond=999999)
+        # Today start & end in IST → convert to UTC for DB query
+        today_start = IST.localize(
+            datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        ).astimezone(UTC)
+
+        today_end = IST.localize(
+            datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
+        ).astimezone(UTC)
+
         filter_query = {
             "type": type,
             "branchName": branchName,
             "date": {
-                "$gte": today_start.astimezone(UTC),
-                "$lte": today_end.astimezone(UTC)
+                "$gte": today_start,
+                "$lte": today_end
             }
         }
         collection = get_bank_deposit_collection()

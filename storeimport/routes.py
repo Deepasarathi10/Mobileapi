@@ -11,6 +11,17 @@ from .models import PurchaseSubcategory, PurchaseSubcategoryPost, get_iso_dateti
 from .utils import get_purchaseitem_collection, get_purchasesubcategory_collection
 from storeDispatch.utils import get_dispatch_collection
 
+from datetime import datetime, timezone, timedelta
+
+def convert_to_iso(sentDate: str):
+    ist_offset = timedelta(hours=5, minutes=30)
+    ist_timezone = timezone(ist_offset)
+    try:
+        parsed = datetime.strptime(sentDate, "%Y-%m-%d %H:%M:%S.%f")
+    except ValueError:
+        parsed = datetime.strptime(sentDate, "%Y-%m-%d %H:%M:%S")
+    return parsed.replace(tzinfo=ist_timezone).isoformat()
+
 
 
 # User-friendly header mapping for subcategory import and export
@@ -241,7 +252,9 @@ def normalize(text: str) -> str:
 async def import_item(
     file: UploadFile = File(...),
     location: str = None,
-    sentDate: str = None
+    sentDate: str = None,
+    createdBy: str = None
+
 ):
     """
     Import purchase subcategories and quantities from CSV into a single record.
@@ -305,7 +318,7 @@ async def import_item(
             uom_list.append(uom)
             price = int(float(doc.get("purchasePrice", 0)))
             price_list.append(price)
-            itemcode_list.append(doc.get("itemCode", ""))
+            itemcode_list.append("")
 
             if str(uom).lower() in ["kg", "kgs"]:
                 weight_list.append(qty_val)
@@ -314,7 +327,7 @@ async def import_item(
                 qty_list.append(int(qty_val))
                 weight_list.append(0)
 
-            amount_list.append(int(qty_val * price))
+            amount_list.append(int(qty_val) * int(price))
 
         if not variance_names:
             return "Import Failed: No valid items to import after filtering"
@@ -322,34 +335,38 @@ async def import_item(
         # --- Get the latest dispatchNumber from storeDispatch ---
         latest_dispatch = await store_dispatch_col.find({}, {"dispatchNumber": 1}).sort("dispatchNumber", -1).to_list(length=1)
         if latest_dispatch:
-            dispatch_number = latest_dispatch[0].get("dispatchNumber", 0)
+            dispatch_number = latest_dispatch[0].get("dispatchNumber", 0)+1
         else:
             dispatch_number = 1  # default if none exist
 
         sentDate_str = None
         if sentDate:
-            try:
-                parsed_sent_date = datetime.fromisoformat(sentDate)
-                sentDate_str = parsed_sent_date.strftime("%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                sentDate_str = str(sentDate)
+            sentDate_str = convert_to_iso(sentDate)
+        else:   
+            sentDate_str = str(sentDate)
 
         # --- Insert document using dispatchNumber as ID ---
         document = {
-            "randomId": dispatch_number,  # <-- using dispatchNumber from storeDispatch
-            "location": location,
+            "varianceName": variance_names,
+            "uom": uom_list,
             "itemName": variance_names,
             "price": price_list,
-            "uom": uom_list,
-            "varianceName": variance_names,
-            "qty": qty_list,
-            "weight": weight_list,
-            "amount": amount_list,
             "itemCode": itemcode_list,
-            "sentDate": sentDate_str,
+            "weight": weight_list,
+            "qty": qty_list,
+            "amount": amount_list,
+            "totalAmount": 0,                       
             "date": get_iso_datetime(),
-            "status": "active",
-            "dispatchNumber": dispatch_number  # store it as well
+            "reason": "",                     
+            "branchName": location,
+            "createdBy": createdBy,
+            "type": "store",
+            "status": "dispatched",
+            "sentDate": sentDate_str,            
+            "section": "",
+            "dispatchNumber": dispatch_number , # store it as well
+            "from_": "RM",
+
         }
 
         await purchasesub_col.insert_one(document)

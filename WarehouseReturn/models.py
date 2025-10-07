@@ -24,6 +24,7 @@ class WarehouseReturn(BaseModel):
     
     
 class WarehouseReturnPost(BaseModel):
+    warehouseReturnNumber: Optional[str] = None  # NEW
 
     varianceName:Optional[list[str]]=None
     uom: Optional[list[str]] = None

@@ -27,7 +27,8 @@ class WastageEntry(BaseModel):
 class WastageEntryPost(BaseModel):
 
     varianceName:Optional[list[str]]=None
-  
+    wastageEntryNumber: Optional[str] = None  # NEW
+    
     uom: Optional[list[str]] = None
     itemName: Optional[list[str]] = None
     price: Optional[list[int]] = None

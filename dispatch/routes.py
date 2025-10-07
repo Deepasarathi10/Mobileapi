@@ -3,7 +3,8 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, logger
 from bson import ObjectId, errors
 from datetime import datetime, timedelta
-from motor.motor_asyncio import AsyncIOMotorClient  
+from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import DESCENDING
 
 from pydantic import ValidationError
 
@@ -11,61 +12,92 @@ from SalesOrder.utils import get_counter_collection, get_salesOrder_collection
 from .models import Dispatch, DispatchPost, get_iso_datetime
 from .utils import get_dispatch_collection
 from Employee.utils import get_employee_collection
+from Branches.utils import get_branch_collection
 
 router = APIRouter()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-async def get_next_sequence() -> int:
-    """
-    Get the next sequence number (1, 2, 3...) for dispatch.
-    """
-    counters_collection = get_counter_collection()  # no await here
-    try:
-        # Only the method is awaitable
-        result = await counters_collection.find_one_and_update(
-            {"prefix": "dispatch"},
-            {"$inc": {"sequence": 1}},
-            upsert=True,
-            return_document=True
-        )
-        return result["sequence"]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Failed to generate dispatch number")
+
+
+# ✅ Sequence generator
+async def get_next_dispatch_sequence() -> int:
+    counters_collection = get_counter_collection()
+    result = await counters_collection.find_one_and_update(
+        {"prefix": "dispatch_global"},
+        {"$inc": {"sequence": 1}},
+        upsert=True,
+        return_document=True
+    )
+    return result["sequence"]
+
 
 @router.post("/", response_model=dict)
 async def create_dispatch(dispatch: DispatchPost):
     new_dispatch_data = dispatch.dict()
 
-    # Fetch the driver's phone number from Employee collection
+    # ✅ Normalize qty/weight exclusivity
+    qty_list = new_dispatch_data.get("qty") or []
+    weight_list = new_dispatch_data.get("weight") or []
+
+    max_len = max(len(qty_list), len(weight_list))
+    normalized_qty, normalized_weight = [], []
+
+    for i in range(max_len):
+        qty_val = qty_list[i] if i < len(qty_list) else 0
+        weight_val = weight_list[i] if i < len(weight_list) else 0.0
+
+        if qty_val and qty_val > 0:
+            normalized_qty.append(qty_val)
+            normalized_weight.append(0.0)
+        elif weight_val and weight_val > 0:
+            normalized_qty.append(0)
+            normalized_weight.append(weight_val)
+        else:
+            normalized_qty.append(0)
+            normalized_weight.append(0.0)
+
+    new_dispatch_data["qty"] = normalized_qty
+    new_dispatch_data["weight"] = normalized_weight
+
+    # ✅ Fetch the driver's phone number
     employee_collection = get_employee_collection()
-    
-    driver_doc = employee_collection.find_one({
-        "name": dispatch.driverName,
+    driver_doc = await employee_collection.find_one({
+        "firstName": dispatch.driverName,
         "position": "Driver"
     })
+    new_dispatch_data["driverNumber"] = driver_doc.get("phoneNumber") if driver_doc else None
 
-    if driver_doc:
-        new_dispatch_data["driverNumber"] = driver_doc.get("phoneNumber")
-    else:
-        new_dispatch_data["driverNumber"] = None
+    # ✅ Fetch branch alias (use aliasName field instead of alias)
+    branch_collection = get_branch_collection()
+    branch_doc = await branch_collection.find_one({"branchName": dispatch.branchName})
 
-    # Always generate numeric dispatch number
+    if not branch_doc or not branch_doc.get("aliasName"):
+        raise HTTPException(status_code=400, detail="Invalid branch or missing alias")
+
+    branch_alias = branch_doc["aliasName"].upper()
+
+    # ✅ Generate formatted dispatch number
     try:
-        generated_dispatch_no = await get_next_sequence()
-        new_dispatch_data["dispatchNo"] = generated_dispatch_no
+        seq_num = await get_next_dispatch_sequence()
+        formatted_dispatch_no = f"DI{branch_alias}{str(seq_num).zfill(5)}"
+        new_dispatch_data["dispatchNo"] = str(formatted_dispatch_no)
+        # new_dispatch_data["branchAlias"] = branch_alias
+        # new_dispatch_data["createdAt"] = datetime.utcnow()
     except Exception as e:
         logger.error(f"Failed to generate dispatchNo: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to generate dispatch number")
 
-    # Insert into MongoDB
+    # ✅ Insert into MongoDB
     result = await get_dispatch_collection().insert_one(new_dispatch_data)
 
     return {
+        "message": "Dispatch created successfully",
         "inserted_id": str(result.inserted_id),
-        "date": new_dispatch_data.get("date", get_iso_datetime()),
-        "dispatchNo": new_dispatch_data["dispatchNo"]
+        "dispatchNo": new_dispatch_data["dispatchNo"],
+        "branchAlias": branch_alias,
+        "date": new_dispatch_data.get("date", datetime.utcnow().isoformat())
     }
 
 def build_date_range_filter(start: Optional[str], end: Optional[str], field_name: str):
@@ -95,6 +127,7 @@ def build_date_range_filter(start: Optional[str], end: Optional[str], field_name
 async def get_all_dispatch_entries(
     start_date: Optional[str] = Query(None, description="Start date in DD-MM-YYYY format"),
     end_date: Optional[str] = Query(None, description="End date in DD-MM-YYYY format"),
+    status: Optional[str] = Query(None, description="Filter by dispatch status (case-insensitive)"),
     approvalStatus: Optional[str] = Query(None, description="Filter by approval status (case-insensitive)"),
     approvalType: Optional[str] = Query(None, description="Filter by approval type (case-insensitive)"),
     summary: Optional[str] = Query(None, description="Filter by summary text (case-insensitive)"),
@@ -108,7 +141,10 @@ async def get_all_dispatch_entries(
     Fetch all dispatch entries, optionally filtering by various parameters.
     Excludes entries with a 'Cancel' status.
     """
-    query = {"status": {"$ne": "Cancel"}}  # Exclude cancelled dispatches
+    query = {"status": {"$ne": "cancelled"}}  # Exclude cancelled dispatches
+
+    if status:
+        query["status"] = {"$regex": status, "$options": "i"}
     approval_filter = {}
 
     # Dispatch number filter
@@ -156,7 +192,7 @@ async def get_all_dispatch_entries(
         entry["dispatchId"] = str(entry.pop("_id"))  # Replace ObjectId with string
 
         if "dispatchNo" in entry:
-            entry["dispatchNo"] = str(entry["dispatchNo"])
+            entry["dispatchNo"] = str(entry["dispatchNo"])  # ✅ always string
         
         if "date" in entry and isinstance(entry["date"], str):
             try:
@@ -171,6 +207,7 @@ async def get_all_dispatch_entries(
             print(f"Validation error for entry: {entry}")
             print(f"Error details: {e}")
             continue
+
     
     return formatted_dispatch_entries
 
@@ -201,11 +238,13 @@ async def get_paginated_dispatch_entries(
     total_count = await collection.count_documents(query)
 
     skip = (page - 1) * page_size
-    cursor = collection.find(query).skip(skip).limit(page_size)
+    cursor = await collection.find(query).skip(skip).limit(page_size)
     dispatch_entries = []
     async for entry in cursor:
         entry["dispatchId"] = str(entry["_id"])
+        entry["dispatchNo"] = str(entry.get("dispatchNo", ""))  # ✅ force string
         dispatch_entries.append(Dispatch(**entry).dict())
+
 
     total_pages = (total_count + page_size - 1) // page_size
 
@@ -229,12 +268,14 @@ async def get_dispatch_by_id(dispatch_id: str):
     :return: The Dispatch object.
     
     """
-    dispatch = get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
+    dispatch = await get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
     if dispatch:
         dispatch["dispatchId"] = str(dispatch["_id"])
+        dispatch["dispatchNo"] = str(dispatch.get("dispatchNo", ""))  # ✅ force string
         return Dispatch(**dispatch)
     else:
         raise HTTPException(status_code=404, detail="Dispatch not found")
+
 
 @router.put("/{dispatch_id}")
 async def update_dispatch(dispatch_id: str, dispatch: DispatchPost):
@@ -265,6 +306,19 @@ async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
         if value is not None
     }
 
+    # Rule: enforce qty/weight exclusivity only if only one is provided
+    if "receivedQty" in updated_fields and "receivedWeight" not in updated_fields:
+        qty_values = updated_fields["receivedQty"]
+        if isinstance(qty_values, list) and any(q > 0 for q in qty_values):
+            updated_fields["receivedWeight"] = [0.0] * len(qty_values)
+
+    elif "receivedWeight" in updated_fields and "receivedQty" not in updated_fields:
+        weight_values = updated_fields["receivedWeight"]
+        if isinstance(weight_values, list) and any(w > 0 for w in weight_values):
+            updated_fields["receivedQty"] = [0] * len(weight_values)
+
+
+
     if "driverName" in updated_fields:
         employee = await get_employee_collection().find_one({"firstName": updated_fields["driverName"]})
         if employee:
@@ -284,6 +338,7 @@ async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
 
     updated_dispatch = await get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
     updated_dispatch["_id"] = str(updated_dispatch["_id"])
+    updated_dispatch["dispatchNo"] = str(updated_dispatch.get("dispatchNo", ""))  # ✅ force string
     return updated_dispatch
 
 @router.delete("/{dispatch_id}")
@@ -334,7 +389,9 @@ async def patch_salesOrder(salesOrder_id: str, salesOrder_patch: DispatchPost):
     # Fetch and return the updated sales order
     updated_salesOrder = get_dispatch_collection().find_one({"_id": ObjectId(salesOrder_id)})
     updated_salesOrder["_id"] = str(updated_salesOrder["_id"])
+    updated_salesOrder["dispatchNo"] = str(updated_salesOrder.get("dispatchNo", ""))  # ✅ force string
     return updated_salesOrder
+
 
 @router.patch("/{dispatch_id}/status")
 async def change_dispatch_status(dispatch_id: str, status: str):
@@ -373,6 +430,5 @@ async def change_dispatch_status(dispatch_id: str, status: str):
                 raise HTTPException(status_code=404, detail="Sale order not found")
 
     return {"message": "Dispatch status updated successfully"}
-
 
 
