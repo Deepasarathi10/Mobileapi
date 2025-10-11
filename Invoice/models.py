@@ -24,7 +24,6 @@ class Invoice(BaseModel):
     branchId: Optional[str] = None
     branchName: Optional[str] = None
     aliasName: Optional[str] = None
-
     paymentType: Optional[List[str]] = None
     cash: Optional[int] = None
     card: Optional[int] = None
@@ -38,8 +37,7 @@ class Invoice(BaseModel):
     deviceNumber: Optional[int] = None
     customCharge: Optional[int] = None
     discountAmount: Optional[float] = None
-    discountPercentage: Optional[int] = None
-    user: Optional[List[str]] = None
+    discountPercentage: Optional[int] = None    
     deviceCode:Optional[str]=None
     kotaddOns:Optional[List[ConfigItem]] = None
     createdBy:Optional[str]=None
@@ -68,7 +66,6 @@ class InvoiceCreate(BaseModel):
     branchId: Optional[str] = None
     branchName: Optional[str] = None
     aliasName: Optional[str] = None
-
     paymentType: Optional[List[str]] = None
     cash: Optional[int] = None
     card: Optional[int] = None
@@ -82,8 +79,7 @@ class InvoiceCreate(BaseModel):
     deviceNumber: Optional[int] = None
     customCharge: Optional[int] = None
     discountAmount: Optional[float] = None
-    discountPercentage: Optional[int] = None
-    user:Optional[List[str]] = None
+    discountPercentage: Optional[int] = None   
     deviceCode:Optional[str]=None
     kotaddOns:Optional[List[ConfigItem]] = None
     createdBy:Optional[str]=None
@@ -110,7 +106,6 @@ class InvoiceUpdate(BaseModel):
     branchId: Optional[str] = None
     branchName: Optional[str] = None
     aliasName: Optional[str] = None
-
     paymentType: Optional[List[str]] = None
     cash: Optional[int] = None
     card: Optional[int] = None
@@ -124,8 +119,7 @@ class InvoiceUpdate(BaseModel):
     deviceNumber: Optional[int] = None
     customCharge: Optional[int] = None
     discountAmount: Optional[float] = None
-    discountPercentage: Optional[int] = None
-    user: Optional[List[str]] = None
+    discountPercentage: Optional[int] = None    
     deviceCode:Optional[str]=None
     kotaddOns:Optional[List[ConfigItem]] = None
     createdBy:Optional[str]=None
