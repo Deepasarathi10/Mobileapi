@@ -23,6 +23,8 @@ class Invoice(BaseModel):
     employeeName: Optional[str] = None
     branchId: Optional[str] = None
     branchName: Optional[str] = None
+    aliasName: Optional[str] = None
+
     paymentType: Optional[List[str]] = None
     cash: Optional[int] = None
     card: Optional[int] = None
@@ -61,6 +63,8 @@ class InvoiceCreate(BaseModel):
     employeeName: Optional[str] = None
     branchId: Optional[str] = None
     branchName: Optional[str] = None
+    aliasName: Optional[str] = None
+
     paymentType: Optional[List[str]] = None
     cash: Optional[int] = None
     card: Optional[int] = None
@@ -99,6 +103,8 @@ class InvoiceUpdate(BaseModel):
     employeeName: Optional[str] = None
     branchId: Optional[str] = None
     branchName: Optional[str] = None
+    aliasName: Optional[str] = None
+
     paymentType: Optional[List[str]] = None
     cash: Optional[int] = None
     card: Optional[int] = None

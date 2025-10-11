@@ -37,6 +37,8 @@ class SalesOrder(BaseModel):
     orderInvoiceNo: Optional[str] = None
     branchId: Optional[str] = None
     branchName: Optional[str] = None
+    aliasName: Optional[str] = None
+
     invoiceDate: Optional[datetime] = None
     receivedDate: Optional[datetime] = None
     cash: Optional[float] = None
@@ -123,6 +125,8 @@ class SalesOrderPost(BaseModel):
     orderInvoiceNo: Optional[str] = None
     branchId: Optional[str] = None
     branchName: Optional[str] = None
+    aliasName: Optional[str] = None
+
     invoiceDate: Optional[datetime] = None
     receivedDate: Optional[datetime] = None
     cash: Optional[float] = None
@@ -201,6 +205,8 @@ class Invoice(BaseModel):
     employeeName: Optional[str] = None
     branchId: Optional[str] = None
     branchName: Optional[str] = None
+    aliasName: Optional[str] = None
+
     paymentType: Optional[str] = None
     cash: Optional[int] = None
     card: Optional[int] = None
@@ -228,6 +234,8 @@ class SalesOrderResponse(BaseModel):
     productionTime: Optional[datetime] = None
     dispatchTime: Optional[datetime] = None
     branchName: Optional[str] = None
+    aliasName: Optional[str] = None
+
     receivedTime: Optional[datetime] = None
     invoiceTime: Optional[datetime] = None
     varianceName: Optional[List[str]] = None

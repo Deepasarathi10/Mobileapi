@@ -120,6 +120,8 @@ routes_info = [
 	{"module": "sfgtofg.routes", "prefix": "/fastapi/sfgtofgs", "tags": ["SFG to FG"]},
 	{"module": "rmclosing.routes", "prefix": "/fastapi/rmclosings", "tags": ["Rm Closing"]},
 	{"module": "storeimport.routes", "prefix": "/fastapi/storeimports", "tags": ["StoreImport"]},
+	{"module": "razorPay.routes", "prefix": "/fastapi/razorPay", "tags": ["RazorPay"]},
+
 
 
 
