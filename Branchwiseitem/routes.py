@@ -1512,124 +1512,83 @@ async def update_system_stock(
     except Exception as e:
         print(f"🔥 Unexpected server error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.patch("/reduce_systemstock")
 async def reduce_system_stock(
-    variance_names: List[str] = Body(..., description="List of variance names of the items to update"),
-    branches: List[str] = Body(..., description="List of full branch names"),
-    stock_updates: List[int] = Body(..., description="List of quantities to deduct from system stock")
+    variance_item_codes: List[str],
+    variance_names: List[str],
+    qtys: List[int],
+    alias_name: str
 ):
     """
-    Reduce system stock for multiple variances and branches based on invoice quantity.
-    Example: if systemStock_AR = 100 and qty = 10 → update to 90
+    Reduce system stock for multiple variances for a single static branch alias.
+    Uses the flat collection format where varianceitemCode is unique.
     """
     print("🚀 [reduce_system_stock] Function called")
-    print(f"📥 Received data → variance_names: {variance_names}, branches: {branches}, stock_updates: {stock_updates}")
+    print(f"📥 Received data → Codes: {variance_item_codes}, Names: {variance_names}, Qty: {qtys}, Branch Alias: {alias_name}")
 
-    try:
-        # Step 1️⃣: Validate list lengths
-        if len(variance_names) != len(branches) or len(variance_names) != len(stock_updates):
-            print("❌ [Validation Failed] Length mismatch between provided lists")
-            raise HTTPException(
-                status_code=400,
-                detail="The lengths of variance names, branches, and stock updates must match"
+    if len(variance_item_codes) != len(variance_names) or len(variance_item_codes) != len(qtys):
+        raise HTTPException(status_code=400, detail="Lengths of codes, names, and quantities must match")
+
+    responses = []
+
+    for idx, (code, name, qty) in enumerate(zip(variance_item_codes, variance_names, qtys), start=1):
+        print(f"\n🧾 [Item {idx}] Processing → Name: {name}, Code: {code}, Qty to deduct: {qty}")
+
+        try:
+            # 🔹 Find the document using unique varianceitemCode
+            doc = await branchwiseitem_collection.find_one({"varianceitemCode": code})
+            if not doc:
+                print(f"❌ Document with varianceitemCode '{code}' not found")
+                responses.append({
+                    "varianceitemCode": code,
+                    "varianceName": name,
+                    "error": "Variance not found"
+                })
+                continue
+
+            system_stock_field = f"systemStock_{alias_name}"
+            if system_stock_field not in doc:
+                print(f"❌ Branch '{alias_name}' stock field not found for variance '{name}'")
+                responses.append({
+                    "varianceitemCode": code,
+                    "varianceName": name,
+                    "error": f"Branch '{alias_name}' stock field not found"
+                })
+                continue
+
+            current_stock = doc.get(system_stock_field, 0)
+            new_stock = max(current_stock - qty, 0)
+            print(f"   ⚙️ Current stock: {current_stock}, Deduct: {qty}, New stock: {new_stock}")
+
+            # 🔹 Update MongoDB
+            update_result = await branchwiseitem_collection.update_one(
+                {"varianceitemCode": code},
+                {"$set": {system_stock_field: new_stock}}
             )
+            print(f"   ✅ Stock updated! Modified count: {update_result.modified_count}")
 
-        update_responses = []
-        print(f"🔁 [Processing] Starting loop for {len(variance_names)} item(s)...")
+            responses.append({
+                "varianceitemCode": code,
+                "varianceName": name,
+                "previousStock": current_stock,
+                "deductedQty": qty,
+                "updatedStock": new_stock,
+                "modifiedCount": update_result.modified_count
+            })
 
-        # Step 2️⃣: Iterate through each item/branch combination
-        for idx, (variance_name, branch_name, qty_to_deduct) in enumerate(zip(variance_names, branches, stock_updates), start=1):
-            print(f"\n🧾 [Item {idx}] Processing variance '{variance_name}' for branch '{branch_name}' (Deduct: {qty_to_deduct})")
+        except Exception as e:
+            print(f"🔥 Exception while reducing stock for '{name}' (code: {code}): {e}")
+            responses.append({
+                "varianceitemCode": code,
+                "varianceName": name,
+                "error": str(e)
+            })
 
-            try:
-                # Step 3️⃣: Find branch alias
-                print(f"🔍 [Step 3] Looking up alias for branch '{branch_name}'...")
-                branch_doc = await branch_collection.find_one(
-                    {"branchName": branch_name},
-                    {"_id": 0, "aliasName": 1}
-                )
+    print("\n🏁 [reduce_system_stock] Completed all items")
+    return {"status": "success", "updates": responses}
 
-                if not branch_doc:
-                    print(f"⚠️ [Step 3] Branch '{branch_name}' not found in DB.")
-                    update_responses.append({
-                        "varianceName": variance_name,
-                        "branchName": branch_name,
-                        "error": "Branch not found"
-                    })
-                    continue
-
-                alias_name = branch_doc["aliasName"]
-                system_stock_field = f"systemStock_{alias_name}"
-                print(f"🏷️ [Step 3] Found alias '{alias_name}'. Using stock field '{system_stock_field}'.")
-
-                # Step 4️⃣: Fetch current system stock for this variance
-                print(f"📦 [Step 4] Fetching current system stock for '{variance_name}'...")
-                item_doc = await branchwiseitem_collection.find_one(
-                    {"varianceName": variance_name},
-                    {"_id": 0, system_stock_field: 1}
-                )
-
-                if not item_doc or system_stock_field not in item_doc:
-                    print(f"⚠️ [Step 4] System stock not found for '{variance_name}' (branch '{branch_name}')")
-                    update_responses.append({
-                        "varianceName": variance_name,
-                        "branchName": branch_name,
-                        "aliasName": alias_name,
-                        "error": "Item or system stock not found"
-                    })
-                    continue
-
-                current_stock = item_doc[system_stock_field]
-                new_stock = max(current_stock - qty_to_deduct, 0)
-                print(f"📉 [Step 4] Current stock: {current_stock}, Deduct: {qty_to_deduct}, New stock: {new_stock}")
-
-                # Step 5️⃣: Update the field in DB
-                print(f"🛠️ [Step 5] Updating '{system_stock_field}' for '{variance_name}'...")
-                update_result = await branchwiseitem_collection.update_one(
-                    {"varianceName": variance_name},
-                    {"$set": {system_stock_field: new_stock}}
-                )
-
-                if update_result.modified_count == 0:
-                    print(f"⚠️ [Step 5] No modification made (maybe same stock value or document missing).")
-                    update_responses.append({
-                        "varianceName": variance_name,
-                        "branchName": branch_name,
-                        "aliasName": alias_name,
-                        "error": "No update performed (maybe same value)"
-                    })
-                    continue
-
-                print(f"✅ [Step 5] Successfully updated '{variance_name}' for branch '{branch_name}' → {current_stock} → {new_stock}")
-                update_responses.append({
-                    "varianceName": variance_name,
-                    "branchName": branch_name,
-                    "aliasName": alias_name,
-                    "previousSystemStock": current_stock,
-                    "deductedQty": qty_to_deduct,
-                    "updatedSystemStock": new_stock
-                })
-
-            except Exception as inner_err:
-                print(f"🔥 [Inner Error] Failed updating '{variance_name}' for '{branch_name}': {inner_err}")
-                update_responses.append({
-                    "varianceName": variance_name,
-                    "branchName": branch_name,
-                    "error": f"Update failed: {str(inner_err)}"
-                })
-
-        print("\n✅ [reduce_system_stock] All updates processed successfully.")
-        print(f"📊 [Final Summary] {update_responses}")
-        return {"status": "success", "updates": update_responses}
-
-    except HTTPException as http_err:
-        print(f"❌ [HTTP Error] {http_err.detail}")
-        raise http_err
-    except Exception as e:
-        print(f"🔥 [Server Error] Unexpected error occurred: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-        
 @router.get("/getsystemstock/")
 async def get_system_stock(
     variance_name: str = Query(..., description="Variance name of the item"),

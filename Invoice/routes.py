@@ -13,63 +13,58 @@ def serialize_dict(item) -> dict:
     
     return {**{i: str(item[i]) for i in item if i == '_id'}, **{i: item[i] for i in item if i != '_id'}}
 
-@router.post('/', response_model=Invoice, status_code=status.HTTP_201_CREATED)
-async def create_invoices(invoice: InvoiceCreate):
+@router.post("/", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def create_invoices(invoice: dict):
     print("🚀 [create_invoices] API called")
+    print(f"📥 Incoming invoice data: {invoice}")
 
-    # Step 1️⃣: Convert invoice model to dict
-    invoice_dict = invoice.model_dump()
-    print(f"📦 [Step 1] Raw invoice data: {invoice_dict}")
+    # Step 1: Add system fields
+    invoice["invoiceId"] = str(ObjectId())
+    invoice["status"] = "active"
+    print(f"🆔 Assigned invoiceId: {invoice['invoiceId']}")
+    print(f"⚙️ Invoice data with system fields: {invoice}")
 
-    # Step 2️⃣: Add system fields
-    invoice_dict['invoiceId'] = str(ObjectId())
-    invoice_dict['status'] = 'active'
-    print(f"🆔 [Step 2] Assigned invoiceId: {invoice_dict['invoiceId']} and status: active")
-
-    # Step 3️⃣: Insert invoice into database
+    # Step 2: Insert invoice into DB
     try:
-        result = await get_invoice_collection().insert_one(invoice_dict)
+        result = await get_invoice_collection().insert_one(invoice)
         if not result.inserted_id:
             raise HTTPException(status_code=500, detail="Error creating invoice")
-        print(f"✅ [Step 3] Invoice successfully inserted with _id: {result.inserted_id}")
-    except Exception as db_err:
-        print(f"🔥 [DB ERROR] Failed to insert invoice: {db_err}")
+        print(f"✅ Invoice inserted into DB with _id: {result.inserted_id}")
+    except Exception as e:
+        print(f"🔥 Database insert error: {e}")
         raise HTTPException(status_code=500, detail="Database insert failed")
 
-    # Step 4️⃣: Prepare data for stock reduction
+    # Step 3: Reduce system stock
     try:
-        print("🔍 [Step 4] Preparing stock reduction data...")
+        item_codes = invoice.get("varianceitemCode", [])
+        variance_names = invoice.get("varianceName", [])
+        qtys = invoice.get("qty", [])
+        alias_name = invoice.get("aliasName")
 
-        items = invoice_dict.get('items', [])
-        if not items:
-            print("⚠️ [Step 4] No items found in invoice, skipping stock update.")
-            return invoice_dict
+        print(f"🧾 Preparing to reduce stock → Codes: {item_codes}, Names: {variance_names}, Qty: {qtys}, Branch: {alias_name}")
 
-        variance_names = [item.get('varianceName') for item in items]
-        branches = [invoice_dict.get('branchName')] * len(variance_names)  # Use branchName (not aliasName)
-        stock_updates = [item.get('qty', 0) for item in items]  # Deduct by invoice quantity
-
-        print(f"🧾 [Step 4] Variance names: {variance_names}")
-        print(f"🏪 [Step 4] Branches: {branches}")
-        print(f"📉 [Step 4] Quantities to deduct: {stock_updates}")
-
-        # Step 5️⃣: Call internal reduce_system_stock function
-        print("⚙️ [Step 5] Calling reduce_system_stock...")
-        update_result = await reduce_system_stock(
-            variance_names=variance_names,
-            branches=branches,
-            stock_updates=stock_updates
-        )
-
-        print("✅ [Step 5] Stock reduction completed successfully.")
-        print(f"🪣 [Step 5 Result] {update_result}")
+        # Only reduce stock if all required data is present
+        if item_codes and variance_names and qtys and alias_name:
+            stock_result = await reduce_system_stock(
+                variance_item_codes=item_codes,
+                variance_names=variance_names,
+                qtys=qtys,
+                alias_name=alias_name
+            )
+            print(f"✅ Stock reduction result: {stock_result}")
+        else:
+            print("⚠️ Missing data for stock reduction. Skipping stock update.")
 
     except Exception as e:
-        print(f"⚠️ [ERROR] Error while updating system stock: {e}")
+        print(f"⚠️ Stock reduction error: {e}")
 
-    # Step 6️⃣: Return final invoice response
-    print("📤 [Step 6] Returning created invoice data.")
-    return invoice_dict
+    # Step 4: Prepare safe response (convert _id if present)
+    if "_id" in invoice:
+        invoice["_id"] = str(invoice["_id"])
+    print("📤 Returning created invoice data.")
+    return invoice
+
+
 
 @router.get('/', response_model=List[Invoice])
 async def get_invoices():

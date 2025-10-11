@@ -49,7 +49,7 @@ class SalesOrder(BaseModel):
     deliveryPartnerName: Optional[str] = None
     shiftId: Optional[str] = None
     shiftName: Optional[str] = None
-    user: Optional[str] = None   
+    user: Optional[List[str]] = None
     deliveryDate: Optional[datetime] = None
     deliveryTime: Optional[str] = None
     event: Optional[str] = None
@@ -69,7 +69,7 @@ class SalesOrder(BaseModel):
     advancePaymentType: Optional[List[List[str]]] = None
     modeWiseAmount: Optional[List[List[float]]] = None
 
-    paymentType: Optional[str] = None
+    paymentType: Optional[List[str]] = None
     finalPrice: Optional[float] = None
     balanceAmount: Optional[float] = None
     saleOrderNo: Optional[str] = None
@@ -137,7 +137,7 @@ class SalesOrderPost(BaseModel):
     deliveryPartnerName: Optional[str] = None
     shiftId: Optional[str] = None
     shiftName: Optional[str] = None
-    user: Optional[str] = None   
+    user: Optional[List[str]] = None  
     # deliveryDate: Optional[str] = None
     deliveryDate: Optional[str] = None 
     deliveryTime: Optional[str] = None 
@@ -156,7 +156,7 @@ class SalesOrderPost(BaseModel):
     advancePaymentTerm:Optional[List[int]] = None
     advancePaymentType: Optional[List[List[str]]] = None
     modeWiseAmount: Optional[List[List[float]]] = None
-    paymentType: Optional[str] = None
+    paymentType: Optional[List[str]] = None
     finalPrice: Optional[float] = None
     balanceAmount:Optional[float] = None
     saleOrderNo: Optional[str] = None
@@ -207,7 +207,7 @@ class Invoice(BaseModel):
     branchName: Optional[str] = None
     aliasName: Optional[str] = None
 
-    paymentType: Optional[str] = None
+    ppaymentType: Optional[List[str]] = None
     cash: Optional[int] = None
     card: Optional[int] = None
     upi: Optional[int] = None

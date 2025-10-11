@@ -5,7 +5,7 @@ from orders.models import ConfigItem
 
 class Invoice(BaseModel):
     invoiceId: Optional[str] = None
-
+    varianceitemCode: Optional[list[str]] = None   
     itemName: Optional[List[str]] = None
     varianceName: Optional[List[str]] = None
     price: Optional[List[float]] = None
@@ -20,7 +20,7 @@ class Invoice(BaseModel):
     status: Optional[str] = None
     salesType: Optional[str] = None
     customerPhoneNumber: Optional[str] = "No Number"
-    employeeName: Optional[str] = None
+    salesPerson: Optional[str] = None
     branchId: Optional[str] = None
     branchName: Optional[str] = None
     aliasName: Optional[str] = None
@@ -42,11 +42,14 @@ class Invoice(BaseModel):
     user: Optional[List[str]] = None
     deviceCode:Optional[str]=None
     kotaddOns:Optional[List[ConfigItem]] = None
+    createdBy:Optional[str]=None
+
     
     
 class InvoiceCreate(BaseModel):
 
     itemName: Optional[List[str]] = None
+    varianceitemCode: Optional[list[str]] = None   
     varianceName: Optional[List[str]] = None
     price: Optional[List[float]] = None
     weight: Optional[List[float]] = None
@@ -55,12 +58,13 @@ class InvoiceCreate(BaseModel):
     tax: Optional[List[float]] = None
     uom: Optional[List[str]] = None
     totalAmount: Optional[float] = None
-    totalAmount2: Optional[float] = None
-    totalAmount3: Optional[float] = None
+    netAmount: Optional[float] = None
+    crossAmount: Optional[float] = None
+    advanceAmount: Optional[float] = None
     status: Optional[str] = None
     salesType: Optional[str] = None
     customerPhoneNumber: Optional[str] = "No Number"
-    employeeName: Optional[str] = None
+    salesPerson: Optional[str] = None
     branchId: Optional[str] = None
     branchName: Optional[str] = None
     aliasName: Optional[str] = None
@@ -82,11 +86,12 @@ class InvoiceCreate(BaseModel):
     user:Optional[List[str]] = None
     deviceCode:Optional[str]=None
     kotaddOns:Optional[List[ConfigItem]] = None
-    
+    createdBy:Optional[str]=None
     
 class InvoiceUpdate(BaseModel):
 
     itemName: Optional[List[str]] = None
+    varianceitemCode: Optional[list[str]] = None   
     varianceName: Optional[List[str]] = None
     price: Optional[List[float]] = None
     weight: Optional[List[float]] = None
@@ -95,12 +100,13 @@ class InvoiceUpdate(BaseModel):
     tax: Optional[List[float]] = None
     uom: Optional[List[str]] = None
     totalAmount: Optional[float] = None
-    totalAmount2: Optional[float] = None
-    totalAmount3: Optional[float] = None
+    netAmount: Optional[float] = None
+    crossAmount: Optional[float] = None
+    advanceAmount: Optional[float] = None
     status: Optional[str] = None
     salesType: Optional[str] = None
     customerPhoneNumber: Optional[str] = "No Number"
-    employeeName: Optional[str] = None
+    salesPerson: Optional[str] = None
     branchId: Optional[str] = None
     branchName: Optional[str] = None
     aliasName: Optional[str] = None
@@ -122,3 +128,4 @@ class InvoiceUpdate(BaseModel):
     user: Optional[List[str]] = None
     deviceCode:Optional[str]=None
     kotaddOns:Optional[List[ConfigItem]] = None
+    createdBy:Optional[str]=None
