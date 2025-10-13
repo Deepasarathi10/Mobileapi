@@ -23,7 +23,21 @@ async def get_all_employee():
         employee["employeeId"] = str(employee["_id"])
         formatted_employee.append(Employee(**employee))
     return formatted_employee
-
+@router.get("/drivers", response_model=List[str])
+async def get_driver_names():
+    employees = list(get_employee_collection().find({"position": "Driver"}))
+    driver_list = []
+    seen_emp_nos = set()
+ 
+    for employee in employees:
+        name = employee.get("firstName", "")
+        emp_no = employee.get("employeeNumber", "")
+        if name and emp_no and emp_no not in seen_emp_nos:
+            driver_list.append(f"{name} - {emp_no}")
+            seen_emp_nos.add(emp_no)
+ 
+    return driver_list
+ 
 @router.get("/{employee_id}", response_model=Employee)
 async def get_employee_by_id(employee_id: str):
     employee = get_employee_collection().find_one({"_id": ObjectId(employee_id)})

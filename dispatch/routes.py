@@ -8,6 +8,7 @@ from pymongo import DESCENDING
 
 from pydantic import ValidationError
 
+from Branchwiseitem.routes import update_system_stock
 from SalesOrder.utils import get_counter_collection, get_salesOrder_collection
 from .models import Dispatch, DispatchPost, get_iso_datetime
 from .utils import get_dispatch_collection
@@ -294,31 +295,31 @@ async def update_dispatch(dispatch_id: str, dispatch: DispatchPost):
 
 @router.patch("/{dispatch_id}")
 async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
-
+ 
     existing_dispatch = await get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
     if not existing_dispatch:
         print(f"❌ Dispatch not found in DB for id={dispatch_id}")
         raise HTTPException(status_code=404, detail="Dispatch not found")
-
+ 
     updated_fields = {
         key: value
         for key, value in dispatch_patch.dict(exclude_unset=True).items()
         if value is not None
     }
-
+ 
     # Rule: enforce qty/weight exclusivity only if only one is provided
     if "receivedQty" in updated_fields and "receivedWeight" not in updated_fields:
         qty_values = updated_fields["receivedQty"]
         if isinstance(qty_values, list) and any(q > 0 for q in qty_values):
             updated_fields["receivedWeight"] = [0.0] * len(qty_values)
-
+ 
     elif "receivedWeight" in updated_fields and "receivedQty" not in updated_fields:
         weight_values = updated_fields["receivedWeight"]
         if isinstance(weight_values, list) and any(w > 0 for w in weight_values):
             updated_fields["receivedQty"] = [0] * len(weight_values)
-
-
-
+ 
+ 
+ 
     if "driverName" in updated_fields:
         employee = await get_employee_collection().find_one({"firstName": updated_fields["driverName"]})
         if employee:
@@ -326,7 +327,7 @@ async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
             updated_fields["driverNumber"] = str(phone_number) if phone_number else ""
         else:
             raise HTTPException(status_code=404, detail=f"Employee '{updated_fields['driverName']}' not found")
-
+ 
     if updated_fields:
         result = await get_dispatch_collection().update_one(
             {"_id": ObjectId(dispatch_id)},
@@ -335,12 +336,34 @@ async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
         if result.modified_count == 0:
             print(f"❌ Update failed for dispatch {dispatch_id}")
             raise HTTPException(status_code=500, detail="Failed to update Dispatch")
-
+ 
     updated_dispatch = await get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
     updated_dispatch["_id"] = str(updated_dispatch["_id"])
     updated_dispatch["dispatchNo"] = str(updated_dispatch.get("dispatchNo", ""))  # ✅ force string
+ 
+     # ✅ If dispatch status is RECEIVED — update system stock
+    if updated_dispatch.get("status") in ["received", "pending_approval"]:
+        try:
+            print("📦 Dispatch received → Updating system stock...")
+ 
+            # Extract data required by update_system_stock()
+            variance_names = updated_dispatch.get("varianceName", [])
+            branches = updated_dispatch.get("branchName", [])
+            stock_updates = updated_dispatch.get("receivedQty", [])
+            weight_updates = updated_dispatch.get("receivedWeight", [])
+ 
+            # Call function directly (no HTTP)
+            await update_system_stock(
+                variance_names=variance_names,
+                branches=branches,
+                stock_updates=stock_updates,
+                weight_updates=weight_updates
+            )
+ 
+        except Exception as e:
+            print(f"⚠️ Failed to update system stock for received dispatch: {e}")
+   
     return updated_dispatch
-
 @router.delete("/{dispatch_id}")
 async def delete_dispatch(dispatch_id: str):
     """

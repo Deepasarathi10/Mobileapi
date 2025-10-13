@@ -5,6 +5,7 @@ class branch(BaseModel):
     branchId: Optional[str] = None  # Define _id field explicitly
     branchName: Optional[str] = None
     aliasName:Optional[str] =None 
+    warehouseName: Optional[str] = None
     status: Optional[Any] = None
     randomId: Optional[str] = None
     address: Optional[Any] = None  # Define _id field explicitly
@@ -26,10 +27,13 @@ class branch(BaseModel):
     location: Optional[str] = None
     Section: Optional[str] = None
     createdBy:Optional[str]=None
+    locationId:Optional[int]=None
+
     
 class branchPost(BaseModel):
     branchName: Optional[str] = None
     aliasName:Optional[str] =None 
+    warehouseName: Optional[str] = None
     status: Optional[str] = None
     randomId: Optional[str] = None
     address: Optional[str] = None  # Define _id field explicitly
@@ -51,3 +55,4 @@ class branchPost(BaseModel):
     Section: Optional[str] = None
     lastUpdatedDate: Optional[str] = None
     createdBy:Optional[str]=None
+    locationId:Optional[int]=None

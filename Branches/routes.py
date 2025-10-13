@@ -31,7 +31,15 @@ async def reset_counter():
 async def generate_random_id():
     counter_value = await get_next_counter_value()
     return f"BR{counter_value:03d}"
-
+@router.get("/branchnames")
+async def get_branch_names():
+   
+    coll = get_branch_collection()
+    cursor = coll.find({}, {"branchName": 1})
+    branches = await cursor.to_list(length=None)
+ 
+    branch_names = [branch_doc.get("branchName") for branch_doc in branches if branch_doc.get("branchName")]
+    return branch_names
 
 @router.post("/", response_model=str, status_code=status.HTTP_201_CREATED)
 async def create_branch(branch: branchPost):

@@ -3,6 +3,8 @@ from fastapi import APIRouter, HTTPException, Query, status
 from bson import ObjectId
 from bson.errors import InvalidId
 from datetime import datetime
+
+from fastapi.encoders import jsonable_encoder
 from .models import ItemType, ItemTypePost
 from .utils import get_itemtransfer_collection
 
@@ -81,8 +83,6 @@ async def get_itemtransfer_by_id(itemtransfer_id: str):
     else:
         raise HTTPException(status_code=404, detail="Itemtransfer not found")
 
-
-# ------------------- PATCH -------------------
 @router.patch("/{itemtransfer_id}")
 async def patch_itemtransfer(itemtransfer_id: str, itemtransfer_patch: ItemTypePost):
     try:
@@ -94,18 +94,16 @@ async def patch_itemtransfer(itemtransfer_id: str, itemtransfer_patch: ItemTypeP
     if not existing_itemtransfer:
         raise HTTPException(status_code=404, detail="Itemtransfer not found")
 
-    updated_fields = {key: value for key, value in itemtransfer_patch.model_dump(exclude_unset=True).items() if value is not None}
+    updated_fields = {k: v for k, v in itemtransfer_patch.model_dump(exclude_unset=True).items() if v is not None}
 
     if updated_fields:
-        result = await get_itemtransfer_collection().update_one({"_id": object_id}, {"$set": updated_fields})
-        if result.modified_count == 0:
-            raise HTTPException(status_code=500, detail="Failed to update Itemtransfer")
+        await get_itemtransfer_collection().update_one({"_id": object_id}, {"$set": updated_fields})
 
     updated_itemtransfer = await get_itemtransfer_collection().find_one({"_id": object_id})
+    updated_itemtransfer["_id"] = str(updated_itemtransfer["_id"])
     updated_itemtransfer["itemtransferId"] = str(updated_itemtransfer["_id"])
-    return updated_itemtransfer
 
-
+    return jsonable_encoder(updated_itemtransfer)
 # ------------------- DELETE -------------------
 @router.delete("/{itemtransfer_id}")
 async def delete_itemtransfer(itemtransfer_id: str):
