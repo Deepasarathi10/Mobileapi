@@ -9,14 +9,16 @@ class Invoice(BaseModel):
     itemName: Optional[List[str]] = None
     varianceName: Optional[List[str]] = None
     price: Optional[List[float]] = None
+    sellingPrice: Optional[List[float]] = None
+    sellingAmount: Optional[List[float]] = None
     weight: Optional[List[float]] = None
     qty: Optional[List[int]] = None
     amount: Optional[List[float]] = None
     tax: Optional[List[float]] = None
     uom: Optional[List[str]] = None
     totalAmount: Optional[float] = None
-    totalAmount2: Optional[float] = None
-    totalAmount3: Optional[float] = None
+    netAmount: Optional[float] = None
+    crossAmount: Optional[float] = None
     status: Optional[str] = None
     salesType: Optional[str] = None
     customerPhoneNumber: Optional[str] = "No Number"
@@ -50,6 +52,8 @@ class InvoiceCreate(BaseModel):
     varianceitemCode: Optional[list[str]] = None   
     varianceName: Optional[List[str]] = None
     price: Optional[List[float]] = None
+    sellingPrice: Optional[List[float]] = None
+    sellingAmount: Optional[List[float]] = None
     weight: Optional[List[float]] = None
     qty: Optional[List[int]] = None
     amount: Optional[List[float]] = None
@@ -90,6 +94,8 @@ class InvoiceUpdate(BaseModel):
     varianceitemCode: Optional[list[str]] = None   
     varianceName: Optional[List[str]] = None
     price: Optional[List[float]] = None
+    sellingPrice: Optional[List[float]] = None
+    sellingAmount: Optional[List[float]] = None
     weight: Optional[List[float]] = None
     qty: Optional[List[int]] = None
     amount: Optional[List[float]] = None
