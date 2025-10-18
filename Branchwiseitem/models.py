@@ -24,6 +24,8 @@ class BranchwiseItem(BaseModel):
     updated_item_Date: Optional[str] = None
     promotional_Offer:Optional[str]=None
     plateItems:Optional[bool]=None
+    uniqueQr: Optional[bool] = None
+    measurementType: Optional[str] = None
 
     
 
@@ -50,6 +52,8 @@ class BranchwiseItemPost(BaseModel):
     updated_item_Date: Optional[str] = None
     promotional_Offer:Optional[str]=None
     plateItems:Optional[bool]=None
+    uniqueQr: Optional[bool] = None
+    measurementType: Optional[str] = None
     
 class BranchwiseItemPatch(BaseModel):
     varianceName: Optional[str] = None
@@ -69,6 +73,8 @@ class BranchwiseItemPatch(BaseModel):
     updated_item_Date: Optional[str] = None
     promotional_Offer:Optional[str]=None
     plateItems:Optional[bool]=None
+    uniqueQr: Optional[bool] = None
+    measurementType: Optional[str] = None
 
 class ItemUpdate(BaseModel):
     updates: Dict[Any, Any]

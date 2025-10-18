@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import DESCENDING
 
 from pydantic import ValidationError
+import pytz
 
 from Branchwiseitem.routes import update_system_stock
 from SalesOrder.utils import get_counter_collection, get_salesOrder_collection
@@ -20,6 +21,14 @@ router = APIRouter()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# Helper: convert UTC datetime to IST
+def to_ist(utc_dt: datetime) -> datetime:
+    if utc_dt and isinstance(utc_dt, datetime):
+        if utc_dt.tzinfo is None:
+            utc_dt = utc_dt.replace(tzinfo=pytz.utc)
+        ist = pytz.timezone("Asia/Kolkata")
+        return utc_dt.astimezone(ist)
+    return utc_dt
 
 
 # ✅ Sequence generator
@@ -364,6 +373,7 @@ async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
             print(f"⚠️ Failed to update system stock for received dispatch: {e}")
    
     return updated_dispatch
+
 @router.delete("/{dispatch_id}")
 async def delete_dispatch(dispatch_id: str):
     """

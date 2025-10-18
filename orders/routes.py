@@ -4,6 +4,9 @@ from bson import ObjectId
 from .models import Diningorder, DiningorderCreate, DiningorderUpdate
 from .utils import get_collection
 
+from Branchwiseitem.routes import reduce_system_stock
+
+
 router = APIRouter()
 collection = get_collection('orders')
 
@@ -14,11 +17,33 @@ def serialize_dict(item) -> dict:
 async def create_orders(order: DiningorderCreate):
     order_dict = order.dict()
     order_dict['orderId'] = str(ObjectId())
-    order_dict['status'] = 'active'  # Set default status to active
+    order_dict['status'] = 'active'
+
     result = await collection.insert_one(order_dict)
-    if result.inserted_id:
-        return order_dict
-    raise HTTPException(status_code=500, detail="Error creating orders order")
+    if not result.inserted_id:
+        raise HTTPException(status_code=500, detail="Error creating order")
+
+    try:
+        order_type = order_dict.get("orderType", "").strip().lower()
+
+        if order_type == "dine in":
+            variance_codes = order_dict.get("varianceItemCodes", [])
+            variance_names = order_dict.get("varianceNames", [])
+            qtys = order_dict.get("quantities", [])
+            alias_name = order_dict.get("branchAlias")
+
+            if variance_codes and variance_names and qtys:
+                await reduce_system_stock(
+                    variance_item_codes=variance_codes,
+                    variance_names=variance_names,
+                    qtys=qtys,
+                    alias_name=alias_name
+                )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error during stock reduction: {str(e)}")
+
+    return order_dict
 
 
 

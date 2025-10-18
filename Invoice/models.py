@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Any, List, Optional,Union
+from datetime import datetime
 
 from orders.models import ConfigItem
 
@@ -22,7 +23,8 @@ class Invoice(BaseModel):
     status: Optional[str] = None
     salesType: Optional[str] = None
     customerPhoneNumber: Optional[str] = "No Number"
-    salesPerson: Optional[str] = None
+    salesPersonId: Optional[str] = None
+    salesPersonName: Optional[str] = None
     branchId: Optional[str] = None
     branchName: Optional[str] = None
     aliasName: Optional[str] = None
@@ -31,8 +33,7 @@ class Invoice(BaseModel):
     card: Optional[int] = None
     upi: Optional[int] = None
     others: Optional[str] = None
-    invoiceDate: Optional[str] = None
-    invoiceTime: Optional[str] = None
+    invoiceDateTime: Optional[str] = None
     shiftNumber: Optional[int] = None
     shiftId: Optional[str] = None
     invoiceNo: Optional[Any] = None
@@ -42,12 +43,13 @@ class Invoice(BaseModel):
     discountPercentage: Optional[int] = None    
     deviceCode:Optional[str]=None
     kotaddOns:Optional[List[ConfigItem]] = None
-    createdBy:Optional[str]=None
+    createdById:Optional[str]=None
+    createdByName:Optional[str]=None
+    syncDateTime:Optional[datetime]=None
 
     
     
 class InvoiceCreate(BaseModel):
-
     itemName: Optional[List[str]] = None
     varianceitemCode: Optional[list[str]] = None   
     varianceName: Optional[List[str]] = None
@@ -61,12 +63,13 @@ class InvoiceCreate(BaseModel):
     uom: Optional[List[str]] = None
     totalAmount: Optional[float] = None
     netAmount: Optional[float] = None
-    crossAmount: Optional[float] = None
+    grossAmount: Optional[float] = None
     advanceAmount: Optional[float] = None
     status: Optional[str] = None
     salesType: Optional[str] = None
     customerPhoneNumber: Optional[str] = "No Number"
-    salesPerson: Optional[str] = None
+    salesPersonId: Optional[str] = None
+    salesPersonName: Optional[str] = None
     branchId: Optional[str] = None
     branchName: Optional[str] = None
     aliasName: Optional[str] = None
@@ -75,8 +78,7 @@ class InvoiceCreate(BaseModel):
     card: Optional[int] = None
     upi: Optional[int] = None
     others: Optional[str] = None
-    invoiceDate: Optional[str] = None
-    invoiceTime: Optional[str] = None
+    invoiceDateTime: Optional[str] = None
     shiftNumber: Optional[int] = None
     shiftId: Optional[str] = None
     invoiceNo: Optional[Any] = None
@@ -86,10 +88,11 @@ class InvoiceCreate(BaseModel):
     discountPercentage: Optional[int] = None   
     deviceCode:Optional[str]=None
     kotaddOns:Optional[List[ConfigItem]] = None
-    createdBy:Optional[str]=None
+    createdById:Optional[str]=None
+    createdByName:Optional[str]=None
+    syncDateTime:Optional[datetime]=None
     
 class InvoiceUpdate(BaseModel):
-
     itemName: Optional[List[str]] = None
     varianceitemCode: Optional[list[str]] = None   
     varianceName: Optional[List[str]] = None
@@ -103,10 +106,11 @@ class InvoiceUpdate(BaseModel):
     uom: Optional[List[str]] = None
     totalAmount: Optional[float] = None
     netAmount: Optional[float] = None
-    crossAmount: Optional[float] = None
+    grossAmount: Optional[float] = None
     advanceAmount: Optional[float] = None
     status: Optional[str] = None
-    salesType: Optional[str] = None
+    salesPersonId: Optional[str] = None
+    salesPersonName: Optional[str] = None
     customerPhoneNumber: Optional[str] = "No Number"
     salesPerson: Optional[str] = None
     branchId: Optional[str] = None
@@ -117,8 +121,7 @@ class InvoiceUpdate(BaseModel):
     card: Optional[int] = None
     upi: Optional[int] = None
     others: Optional[str] = None
-    invoiceDate: Optional[str] = None
-    invoiceTime: Optional[str] = None
+    invoiceDateTime: Optional[str] = None
     shiftNumber: Optional[int] = None
     shiftId: Optional[str] = None
     invoiceNo: Optional[Any] = None
@@ -128,4 +131,6 @@ class InvoiceUpdate(BaseModel):
     discountPercentage: Optional[int] = None    
     deviceCode:Optional[str]=None
     kotaddOns:Optional[List[ConfigItem]] = None
-    createdBy:Optional[str]=None
+    createdById:Optional[str]=None
+    createdByName:Optional[str]=None
+    syncDateTime:Optional[datetime]=None

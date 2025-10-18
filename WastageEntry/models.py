@@ -3,43 +3,48 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 
 class WastageEntry(BaseModel):
-    wastageId: Optional[str] = None  # Define _id field explicitly
-    wastageEntryNumber: Optional[str] = None  # NEW
-    varianceName:Optional[list[str]]=None
-    # category:Optional[list[str]]=None
-    uom: Optional[list[str]] = None
-    itemName: Optional[list[str]] = None
-    price: Optional[list[int]] = None
-    itemCode:Optional[list[str]]=None
-    weight:Optional[list[float]]=None
-    qty: Optional[list[int]] = None
-    amount: Optional[List[float]] = None
-    totalAmount: Optional[float] = None
+    wastageId: Optional[str] = None
+    wastageEntryNumber: Optional[str] = None
+    varianceName: Optional[List[str]] = None
+    uom: Optional[List[str]] = None
+    itemName: Optional[List[str]] = None
+    price: Optional[List[int]] = None
+    itemCode: Optional[List[str]] = None
+    sendweight: Optional[List[float]] = None
+    sendqty: Optional[List[int]] = None
+    sendamount: Optional[List[float]] = None
+    sendtotalAmount: Optional[float] = None
+    receivedweight: Optional[List[float]] = None
+    receivedqty: Optional[List[int]] = None
+    receivedamount: Optional[List[float]] = None
+    receivedtotalAmount: Optional[float] = None
     warehouseName: Optional[str] = None
-    driverName:Optional[str] = None
-    branchName:Optional[str] = None
-
+    driverName: Optional[str] = None
+    branchName: Optional[str] = None
     vehicleNo: Optional[str] = None
-    date: Optional[datetime]= Field(default_factory=datetime.now)
+    date: Optional[datetime] = Field(default_factory=datetime.now)
     reason: Optional[str] = None
-    
-    
+    status: Optional[str] = Field(default="Pending")  # Added status field with default 'Pending'
+
 class WastageEntryPost(BaseModel):
-
-    varianceName:Optional[list[str]]=None
-    wastageEntryNumber: Optional[str] = None  # NEW
-    
-    uom: Optional[list[str]] = None
-    itemName: Optional[list[str]] = None
-    price: Optional[list[int]] = None
-    itemCode:Optional[list[str]]=None
-    weight:Optional[list[float]]=None
-    qty: Optional[list[int]] = None
-    amount: Optional[List[float]] = None
-    totalAmount: Optional[float] = None
+    wastageEntryNumber: Optional[str] = None
+    varianceName: Optional[List[str]] = None
+    uom: Optional[List[str]] = None
+    itemName: Optional[List[str]] = None
+    price: Optional[List[int]] = None
+    itemCode: Optional[List[str]] = None
+    sendweight: Optional[List[float]] = None
+    sendqty: Optional[List[int]] = None
+    sendamount: Optional[List[float]] = None
+    sendtotalAmount: Optional[float] = None
+    receivedweight: Optional[List[float]] = None
+    receivedqty: Optional[List[int]] = None
+    receivedamount: Optional[List[float]] = None
+    receivedtotalAmount: Optional[float] = None
     warehouseName: Optional[str] = None
-    driverName:Optional[str] = None
+    driverName: Optional[str] = None
+    branchName: Optional[str] = None
     vehicleNo: Optional[str] = None
-    branchName:Optional[str] = None
-    date: Optional[datetime]= Field(default_factory=datetime.now)
+    date: Optional[datetime] = Field(default_factory=datetime.now)
     reason: Optional[str] = None
+    status: Optional[str] = Field(default="Pending")  # Added status field with default 'Pending'

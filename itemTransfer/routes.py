@@ -7,6 +7,8 @@ from datetime import datetime
 from fastapi.encoders import jsonable_encoder
 from .models import ItemType, ItemTypePost
 from .utils import get_itemtransfer_collection
+from Branchwiseitem.routes import branchwise_items_collection
+from Branches.utils import get_branch_collection
 
 router = APIRouter()
 
@@ -83,6 +85,7 @@ async def get_itemtransfer_by_id(itemtransfer_id: str):
     else:
         raise HTTPException(status_code=404, detail="Itemtransfer not found")
 
+
 @router.patch("/{itemtransfer_id}")
 async def patch_itemtransfer(itemtransfer_id: str, itemtransfer_patch: ItemTypePost):
     try:
@@ -90,20 +93,70 @@ async def patch_itemtransfer(itemtransfer_id: str, itemtransfer_patch: ItemTypeP
     except InvalidId:
         raise HTTPException(status_code=400, detail="Invalid itemtransfer_id")
 
+   
+
+    # Get existing item transfer
     existing_itemtransfer = await get_itemtransfer_collection().find_one({"_id": object_id})
     if not existing_itemtransfer:
         raise HTTPException(status_code=404, detail="Itemtransfer not found")
 
-    updated_fields = {k: v for k, v in itemtransfer_patch.model_dump(exclude_unset=True).items() if v is not None}
+    
 
+    # Extract only updated fields
+    updated_fields = {
+        k: v for k, v in itemtransfer_patch.model_dump(exclude_unset=True).items() if v is not None
+    }
+
+    
+
+    # Apply updates to the itemtransfer document
     if updated_fields:
-        await get_itemtransfer_collection().update_one({"_id": object_id}, {"$set": updated_fields})
+        result = await get_itemtransfer_collection().update_one({"_id": object_id}, {"$set": updated_fields})
+     
 
+    # --- Stock Update on Sent Status ---
+    if updated_fields.get("status") == "Sent":
+     
+
+        send_qtys = updated_fields.get("sendQty", existing_itemtransfer.get("sendQty", []))
+        to_branch = updated_fields.get("toBranch", existing_itemtransfer.get("toBranch"))
+        item_Names = updated_fields.get("itemName", existing_itemtransfer.get("itemName", []))
+
+      
+
+        # --- Get branch alias ---
+        branch_doc = await get_branch_collection().find_one({"branchName": to_branch})
+        
+
+        if not branch_doc or "aliasName" not in branch_doc:
+            raise HTTPException(status_code=400, detail=f"Branch alias not found for {to_branch}")
+
+        branch_alias = branch_doc["aliasName"]
+        
+
+        # --- Update stock for each item ---
+        for code, qty in zip(item_Names, send_qtys):
+          
+            update_result = await branchwise_items_collection.update_one(
+                {"varianceName": code},
+                {
+                    "$inc": {
+                        f"physicalStock_{branch_alias}": -qty
+                    }
+                }
+            )
+         
+    # Fetch and return the updated document
     updated_itemtransfer = await get_itemtransfer_collection().find_one({"_id": object_id})
     updated_itemtransfer["_id"] = str(updated_itemtransfer["_id"])
     updated_itemtransfer["itemtransferId"] = str(updated_itemtransfer["_id"])
 
+   
     return jsonable_encoder(updated_itemtransfer)
+
+
+
+
 # ------------------- DELETE -------------------
 @router.delete("/{itemtransfer_id}")
 async def delete_itemtransfer(itemtransfer_id: str):

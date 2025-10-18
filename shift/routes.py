@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional,Any
 from fastapi import APIRouter, HTTPException, Query, status
 from bson import ObjectId
 from .models import Shift, ShiftPost, get_iso_datetime
@@ -285,20 +285,18 @@ async def calculate_sales(
         shift_obj_id = None
 
     sales_filter = {
-        "branchName": branch_name,
         "shiftId": shift_id
     }
     invoice_filter = {
-        "branchName": branch_name,
         "$or": [
             {"shiftId": shift_id},
             {"shiftId": shift_obj_id} if shift_obj_id else {}
         ]
     }
 
-    # ✅ Await async DB calls
-    salesorders = await salesorder_col.find(sales_filter).to_list(length=None)
-    invoices = await invoice_col.find(invoice_filter).to_list(length=None)
+    salesorders = await invoice_col.find(sales_filter).to_list(None)  # regular invoices
+    saleorders = await salesorder_col.find({}).to_list(None)  # all sale orders
+    invoices = await invoice_col.find(invoice_filter).to_list(None)  # invoices again?
 
     # Totals across all types
     systemCashSales = 0.0
@@ -311,80 +309,105 @@ async def calculate_sales(
     take_cash = take_card = take_upi = 0.0
     so_cash = so_card = so_upi = 0.0
     bd_cash = bd_card = bd_upi = 0.0
-    other_cash = other_card = other_upi = 0.0  # fallback types
+    other_cash = other_card = other_upi = 0.0
 
-    all_sales = salesorders + invoices
+    # Process invoices + regular sales
+    all_sales = invoices
     for sale in all_sales:
-        payment_mode = str(sale.get("paymentType", "")).strip().lower()
-        if not payment_mode:
+        payment_modes = sale.get("paymentType", [])
+
+        if not isinstance(payment_modes, list):
+            payment_modes = [str(payment_modes)]
+        payment_modes = [p.lower().strip() for p in payment_modes if p]
+
+        if not payment_modes:
             if sale.get("cash"):
-                payment_mode = "cash"
+                payment_modes = ["cash"]
             elif sale.get("card"):
-                payment_mode = "card"
+                payment_modes = ["card"]
             elif sale.get("upi"):
-                payment_mode = "upi"
+                payment_modes = ["upi"]
             else:
-                payment_mode = "other"
+                payment_modes = ["other"]
 
-        # Determine amount from the fields if present, else fallback to totalAmount
-        amt = 0.0
-        if payment_mode == "cash":
-            amt = float(sale.get("cash") or sale.get("totalAmount") or 0)
-        elif payment_mode == "card":
-            amt = float(sale.get("card") or sale.get("totalAmount") or 0)
-        elif payment_mode == "upi":
-            amt = float(sale.get("upi") or sale.get("totalAmount") or 0)
-        else:
-            amt = float(sale.get("totalAmount") or 0)
+        amt_cash = float(sale.get("cash") or 0)
+        amt_card = float(sale.get("card") or 0)
+        amt_upi = float(sale.get("upi") or 0)
+        amt_other = float(sale.get("others") or 0)
+        total_amount = float(sale.get("totalAmount") or 0)
 
-        # Add to total system aggregates
-        if payment_mode == "cash":
-            systemCashSales += amt
-        elif payment_mode == "card":
-            systemCardSales += amt
-        elif payment_mode == "upi":
-            systemUpiSales += amt
-        else:
-            systemOtherSales += amt
+        if "cash" in payment_modes:
+            systemCashSales += amt_cash
+        if "card" in payment_modes:
+            systemCardSales += amt_card
+        if "upi" in payment_modes:
+            systemUpiSales += amt_upi
+        if "other" in payment_modes:
+            systemOtherSales += amt_other if amt_other else total_amount - (amt_cash + amt_card + amt_upi)
 
-        # SalesType breakdown
         stype = str(sale.get("salesType", "") or "").strip().lower()
         if stype in ["dinning", "dining", "kot"]:
-            if payment_mode == "cash":
-                kot_cash += amt
-            elif payment_mode == "card":
-                kot_card += amt
-            elif payment_mode == "upi":
-                kot_upi += amt
+            if "cash" in payment_modes:
+                kot_cash += amt_cash
+            if "card" in payment_modes:
+                kot_card += amt_card
+            if "upi" in payment_modes:
+                kot_upi += amt_upi
         elif stype in ["takeaway", "take away"]:
-            if payment_mode == "cash":
-                take_cash += amt
-            elif payment_mode == "card":
-                take_card += amt
-            elif payment_mode == "upi":
-                take_upi += amt
-        elif stype in ["saleorder", "sale_order"]:
-            if payment_mode == "cash":
-                so_cash += amt
-            elif payment_mode == "card":
-                so_card += amt
-            elif payment_mode == "upi":
-                so_upi += amt
+            if "cash" in payment_modes:
+                take_cash += amt_cash
+            if "card" in payment_modes:
+                take_card += amt_card
+            if "upi" in payment_modes:
+                take_upi += amt_upi
         elif stype in ["birthdaycake", "bdcake"]:
-            if payment_mode == "cash":
-                bd_cash += amt
-            elif payment_mode == "card":
-                bd_card += amt
-            elif payment_mode == "upi":
-                bd_upi += amt
+            if "cash" in payment_modes:
+                bd_cash += amt_cash
+            if "card" in payment_modes:
+                bd_card += amt_card
+            if "upi" in payment_modes:
+                bd_upi += amt_upi
+        elif stype in ["saleorder", "salesorder","salesorders","saleorders"]:
+            if "cash" in payment_modes:
+                so_cash += amt_cash
+            if "card" in payment_modes:
+                so_card += amt_card
+            if "upi" in payment_modes:
+                so_upi += amt_upi
         else:
-            # fallback / others
-            if payment_mode == "cash":
-                other_cash += amt
-            elif payment_mode == "card":
-                other_card += amt
-            elif payment_mode == "upi":
-                other_upi += amt
+            if "cash" in payment_modes:
+                other_cash += amt_cash
+            if "card" in payment_modes:
+                other_card += amt_card
+            if "upi" in payment_modes:
+                other_upi += amt_upi
+
+    # ------------------ Process Sale Orders for advance payments ------------------
+    for so in saleorders:
+        shift_ids = so.get("shiftId", [])
+        if shift_id not in shift_ids and str(shift_obj_id) not in shift_ids:
+            continue  # skip non-matching shiftIds
+
+        advance_types_list = so.get("advancePaymentType", [])  # e.g., [["cash","upi"], ["card"]]
+        mode_amount_list = so.get("modeWiseAmount", [])  # e.g., [[50,50],[100]]
+        
+        if not advance_types_list or not mode_amount_list:
+            continue
+
+        for types, amounts in zip(advance_types_list, mode_amount_list):
+            for t, amt in zip(types, amounts):
+                t = t.lower().strip()
+                if t == "cash":
+                    so_cash += float(amt)
+                    systemCashSales += float(amt)
+                elif t == "card":
+                    so_card += float(amt)
+                    systemCardSales += float(amt)
+                elif t == "upi":
+                    so_upi += float(amt)
+                    systemUpiSales += float(amt)
+                else:
+                    systemOtherSales += float(amt)
 
     # Differences
     cashDiff = float(manualCashsales or 0) - systemCashSales
@@ -395,7 +418,6 @@ async def calculate_sales(
     cardDiffType = await get_diff_type(cardDiff)
     upiDiffType = await get_diff_type(upiDiff)
 
-    # Totals
     totalSystemSales = systemCashSales + systemCardSales + systemUpiSales + systemOtherSales
     totalManualSales = float(manualCashsales or 0) + float(manualCardsales or 0) + float(manualUpisales or 0)
     totalDiff = totalManualSales - totalSystemSales
@@ -407,20 +429,15 @@ async def calculate_sales(
     totalBdCakeSales = bd_cash + bd_card + bd_upi
 
     return {
-        # Totals
         "systemCashSales": systemCashSales,
         "systemCardSales": systemCardSales,
         "systemUpiSales": systemUpiSales,
         "systemOtherSales": systemOtherSales,
         "totalSystemSales": totalSystemSales,
-
-        # Manual entries
         "manualCashsales": manualCashsales,
         "manualCardsales": manualCardsales,
         "manualUpisales": manualUpisales,
         "totalManualSales": totalManualSales,
-
-        # Differences
         "cashSaleDifferenceAmount": cashDiff,
         "cashSaleDifferenceType": cashDiffType,
         "cardSaleDifferenceAmount": cardDiff,
@@ -429,8 +446,6 @@ async def calculate_sales(
         "upiSaleDifferenceType": upiDiffType,
         "totalDifferenceAmount": totalDiff,
         "totalDifferenceType": totalDiffType,
-
-        # Per-type breakdown
         "kotCashSales": kot_cash,
         "kotCardSales": kot_card,
         "kotUpiSales": kot_upi,
@@ -446,13 +461,12 @@ async def calculate_sales(
         "otherCashSales": other_cash,
         "otherCardSales": other_card,
         "otherUpiSales": other_upi,
-
         "totalKotSales": totalKotSales,
         "totalTakeAwaySales": totalTakeAwaySales,
         "totalSaleOrderSales": totalSaleOrderSales,
         "totalBdCakeSales": totalBdCakeSales,
     }
-
+   
 
 # --------------------- Close Shift API ---------------------
 @router.patch("/close-shift/{shift_id}", response_model=Shift)
