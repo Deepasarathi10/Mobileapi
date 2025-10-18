@@ -38,7 +38,6 @@ class SalesOrder(BaseModel):
     branchId: Optional[str] = None
     branchName: Optional[str] = None
     aliasName: Optional[str] = None
-
     invoiceDate: Optional[datetime] = None
     receivedDate: Optional[datetime] = None
     cash: Optional[float] = None
@@ -87,6 +86,7 @@ class SalesOrder(BaseModel):
     companyAddress:Optional[str]=None
     companyGST:Optional[str]=None
     orderType:Optional[str] =None
+    createdById:Optional[str] =None
     isBoxItem:Optional[List[str]] = None
     boxQty:Optional[List[int]] = None
     # approvalStatus:Optional[str] =None
@@ -126,7 +126,7 @@ class SalesOrderPost(BaseModel):
     branchId: Optional[str] = None
     branchName: Optional[str] = None
     aliasName: Optional[str] = None
-
+    createdById:Optional[str] =None
     invoiceDate: Optional[datetime] = None
     receivedDate: Optional[datetime] = None
     cash: Optional[float] = None
@@ -235,7 +235,7 @@ class SalesOrderResponse(BaseModel):
     dispatchTime: Optional[datetime] = None
     branchName: Optional[str] = None
     aliasName: Optional[str] = None
-
+    createdById:Optional[str] =None
     receivedTime: Optional[datetime] = None
     invoiceTime: Optional[datetime] = None
     varianceName: Optional[List[str]] = None

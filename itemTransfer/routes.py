@@ -9,7 +9,6 @@ from .models import ItemType, ItemTypePost
 from .utils import get_itemtransfer_collection
 from Branchwiseitem.routes import branchwise_items_collection
 from Branches.utils import get_branch_collection
-
 router = APIRouter()
 
 # ------------------- CREATE -------------------
@@ -25,6 +24,8 @@ async def create_itemtransfer(itemtransfer: ItemTypePost):
 async def get_all_itemtransfer(
     from_branch: Optional[str] = Query(None),
     to_branch: Optional[str] = Query(None),
+    from_login_id: Optional[str] = Query(None),  
+    to_login_id: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     status: Optional[List[str]] = Query(None),
@@ -36,6 +37,10 @@ async def get_all_itemtransfer(
         base_query["fromBranch"] = from_branch
     if to_branch:
         base_query["toBranch"] = to_branch
+    if from_login_id:  
+        base_query["fromLoginId"] = from_login_id
+    if to_login_id:    
+        base_query["toLoginId"] = to_login_id   
 
     # Status filter
     if status:
@@ -64,6 +69,8 @@ async def get_all_itemtransfer(
         if results:
             for item in results:
                 item["itemtransferId"] = str(item["_id"])
+                item["fromLoginId"] = item.get("fromLoginId", None)
+                item["toLoginId"] = item.get("toLoginId", None)
             return [ItemType(**item) for item in results]
 
     # No matching data
@@ -81,10 +88,14 @@ async def get_itemtransfer_by_id(itemtransfer_id: str):
     itemtransfer = await get_itemtransfer_collection().find_one({"_id": object_id})
     if itemtransfer:
         itemtransfer["itemtransferId"] = str(itemtransfer["_id"])
+        itemtransfer["fromLoginId"] = itemtransfer.get("fromLoginId", None)
+        itemtransfer["toLoginId"] = itemtransfer.get("toLoginId", None)
         return ItemType(**itemtransfer)
     else:
         raise HTTPException(status_code=404, detail="Itemtransfer not found")
 
+
+# ------------------- PATCH -------------------
 
 @router.patch("/{itemtransfer_id}")
 async def patch_itemtransfer(itemtransfer_id: str, itemtransfer_patch: ItemTypePost):
@@ -121,7 +132,8 @@ async def patch_itemtransfer(itemtransfer_id: str, itemtransfer_patch: ItemTypeP
         send_qtys = updated_fields.get("sendQty", existing_itemtransfer.get("sendQty", []))
         to_branch = updated_fields.get("toBranch", existing_itemtransfer.get("toBranch"))
         item_Names = updated_fields.get("itemName", existing_itemtransfer.get("itemName", []))
-
+        from_login_id = updated_fields.get("fromLoginId", existing_itemtransfer.get("fromLoginId"))
+        to_login_id = updated_fields.get("toLoginId", existing_itemtransfer.get("toLoginId"))
       
 
         # --- Get branch alias ---
@@ -150,11 +162,10 @@ async def patch_itemtransfer(itemtransfer_id: str, itemtransfer_patch: ItemTypeP
     updated_itemtransfer = await get_itemtransfer_collection().find_one({"_id": object_id})
     updated_itemtransfer["_id"] = str(updated_itemtransfer["_id"])
     updated_itemtransfer["itemtransferId"] = str(updated_itemtransfer["_id"])
-
+    updated_itemtransfer["fromLoginId"] = updated_itemtransfer.get("fromLoginId", None)
+    updated_itemtransfer["toLoginId"] = updated_itemtransfer.get("toLoginId", None)
    
     return jsonable_encoder(updated_itemtransfer)
-
-
 
 
 # ------------------- DELETE -------------------
