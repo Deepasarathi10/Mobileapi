@@ -11,6 +11,8 @@ class ItemType(BaseModel):
     sendQty: Optional[List[int]] = None
     fromBranch: Optional[str] = None
     toBranch: Optional[str] = None
+    fromLoginId: Optional[str] = None
+    toLoginId: Optional[str] = None
     wareHouseCode: Optional[str] = None
     requestDateTime: Optional[datetime] = None  
     sentDateTime: Optional[datetime] = None  
@@ -26,6 +28,8 @@ class ItemTypePost(BaseModel):
     sendQty: Optional[List[int]] = None
     fromBranch: Optional[str] = None
     toBranch: Optional[str] = None
+    fromLoginId: Optional[str] = None
+    toLoginId: Optional[str] = None
     wareHouseCode: Optional[str] = None
     requestDateTime: Optional[datetime] = Field(default_factory=datetime.utcnow)
     sentDateTime: Optional[datetime] = Field(default_factory=datetime.utcnow)
