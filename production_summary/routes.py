@@ -4,9 +4,9 @@ from datetime import datetime
 import pytz
 from collections import defaultdict
 
-from app.productionEntrys.utils import get_productionEntry_collection
-from app.variance2.utils import get_variences_collection
-from app.production_summary.models import Productionsummary
+from productionEntrys.utils import get_productionEntry_collection
+from variance2.utils import get_variences_collection
+from production_summary.models import Productionsummary
 
 router = APIRouter()
 

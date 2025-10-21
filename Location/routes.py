@@ -303,6 +303,8 @@ async def export_locations_to_csv():
         logger.error(f"Stack Trace: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to export CSV: {str(e)}")
 
+
+
 @router.post("/warehouses/import-csv", response_model=ImportResult, operation_id="import_locations_from_csv")
 async def import_locations_from_csv(file: UploadFile = File(...)):
     try:
@@ -319,8 +321,13 @@ async def import_locations_from_csv(file: UploadFile = File(...)):
         
         inserted_count = 0
         error_count = 0
+        skipped_count = 0
         successful = []
         failed = []
+        duplicates = []
+        
+        # Track unique combinations within the CSV
+        seen_combinations = set()
         
         for index, row in df.iterrows():
             try:
@@ -349,7 +356,7 @@ async def import_locations_from_csv(file: UploadFile = File(...)):
                         except ValueError as ve:
                             failed.append({
                                 "row": index + 2,
-                                "data": convert_objectid_to_str(row_data),  # Convert ObjectId to string
+                                "data": convert_objectid_to_str(row_data),
                                 "error": f"Invalid datetime format for {field}: {str(ve)}",
                                 "missingFields": []
                             })
@@ -361,11 +368,40 @@ async def import_locations_from_csv(file: UploadFile = File(...)):
                 if missing_fields:
                     failed.append({
                         "row": index + 2,
-                        "data": convert_objectid_to_str(row_data),  # Convert ObjectId to string
+                        "data": convert_objectid_to_str(row_data),
                         "error": "Missing required fields",
                         "missingFields": missing_fields
                     })
                     error_count += 1
+                    continue
+                
+                # Check for duplicates within the CSV
+                unique_key = (
+                    row_data["branchName"],
+                    row_data["country"],
+                    row_data["state"],
+                    row_data["city"]
+                )
+                unique_key_str = f"{row_data['branchName']} ({row_data['city']}, {row_data['state']}, {row_data['country']})"
+                if unique_key in seen_combinations:
+                    duplicates.append(unique_key_str)
+                    logger.info(f"Duplicate entry '{unique_key_str}' in CSV, skipping.")
+                    skipped_count += 1
+                    continue
+                seen_combinations.add(unique_key)
+                
+                # Check for duplicate location in database
+                existing_location = get_location_collection().find_one({
+                    "branchName": row_data["branchName"],
+                    "country": row_data["country"],
+                    "state": row_data["state"],
+                    "city": row_data["city"]
+                })
+                
+                if existing_location:
+                    duplicates.append(unique_key_str)
+                    logger.info(f"Duplicate location '{unique_key_str}' found in database, skipping.")
+                    skipped_count += 1
                     continue
                 
                 try:
@@ -373,7 +409,7 @@ async def import_locations_from_csv(file: UploadFile = File(...)):
                 except ValidationError as ve:
                     failed.append({
                         "row": index + 2,
-                        "data": convert_objectid_to_str(row_data),  # Convert ObjectId to string
+                        "data": convert_objectid_to_str(row_data),
                         "error": str(ve),
                         "missingFields": [error["loc"][0] for error in ve.errors()]
                     })
@@ -388,7 +424,7 @@ async def import_locations_from_csv(file: UploadFile = File(...)):
                 location_dict["closingHours"] = location_dict.get("closingHours") or datetime.utcnow()
                 location_dict["randomId"] = get_next_random_id()
                 
-                location_dict = convert_objectid_to_str(location_dict)  # Convert ObjectId to string
+                location_dict = convert_objectid_to_str(location_dict)
                 
                 try:
                     result = get_location_collection().insert_one(location_dict)
@@ -396,7 +432,7 @@ async def import_locations_from_csv(file: UploadFile = File(...)):
                     logger.error(f"Database insert failed for row {index + 2}: {str(e)}")
                     failed.append({
                         "row": index + 2,
-                        "data": convert_objectid_to_str(location_dict),  # Convert ObjectId to string
+                        "data": convert_objectid_to_str(location_dict),
                         "error": f"Database insert failed: {str(e)}",
                         "missingFields": []
                     })
@@ -406,7 +442,7 @@ async def import_locations_from_csv(file: UploadFile = File(...)):
                 inserted_count += 1
                 successful.append({
                     "row": index + 2,
-                    "data": convert_objectid_to_str(location_dict),  # Convert ObjectId to string
+                    "data": convert_objectid_to_str(location_dict),
                     "assignedId": str(result.inserted_id)
                 })
                 
@@ -415,20 +451,22 @@ async def import_locations_from_csv(file: UploadFile = File(...)):
                 logger.error(f"Stack Trace: {traceback.format_exc()}")
                 failed.append({
                     "row": index + 2,
-                    "data": convert_objectid_to_str(row.to_dict()),  # Convert ObjectId to string
+                    "data": convert_objectid_to_str(row.to_dict()),
                     "error": f"Unexpected error: {str(e)}",
                     "missingFields": []
                 })
                 error_count += 1
         
         return ImportResult(
-            message="CSV import completed",
+            message=f"CSV import completed: {inserted_count} new locations, {skipped_count} duplicates skipped.",
             inserted_count=inserted_count,
             updated_count=0,
             errorCount=error_count,
-            successful=convert_objectid_to_str(successful),  # Convert ObjectId to string
+            successful=convert_objectid_to_str(successful),
             updated=[],
-            failed=convert_objectid_to_str(failed)  # Convert ObjectId to string
+            failed=convert_objectid_to_str(failed),
+            duplicates=duplicates,
+            skipped_count=skipped_count
         )
     except Exception as e:
         logger.error(f"Error importing CSV: {str(e)}")
