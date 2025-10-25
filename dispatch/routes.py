@@ -1,10 +1,8 @@
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query, logger
-from bson import ObjectId, errors
-from datetime import datetime, timedelta
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import DESCENDING
+from fastapi import APIRouter, HTTPException, Query, logger, WebSocket, WebSocketDisconnect
+from bson import ObjectId
+from datetime import datetime, timezone
 
 from pydantic import ValidationError
 import pytz
@@ -20,6 +18,18 @@ router = APIRouter()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+connected_clients = set()
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    connected_clients.add(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        connected_clients.remove(websocket)
 
 # Helper: convert UTC datetime to IST
 def to_ist(utc_dt: datetime) -> datetime:
@@ -101,6 +111,18 @@ async def create_dispatch(dispatch: DispatchPost):
 
     # ✅ Insert into MongoDB
     result = await get_dispatch_collection().insert_one(new_dispatch_data)
+
+    for ws in connected_clients.copy():
+        try:
+            await ws.send_json({
+                "type": "dispatch_created",
+                "message": f"Stock dispatched for {dispatch.branchName} by {dispatch.createdBy}",
+                "dispatchNo": new_dispatch_data["dispatchNo"],
+                "branchAlias": branch_alias,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+        except Exception:
+            connected_clients.remove(ws)
 
     return {
         "message": "Dispatch created successfully",
@@ -289,13 +311,7 @@ async def get_dispatch_by_id(dispatch_id: str):
 
 @router.put("/{dispatch_id}")
 async def update_dispatch(dispatch_id: str, dispatch: DispatchPost):
-    """
-    Update an existing dispatch entry.
-
-    :param dispatch_id: The ID of the dispatch entry.
-    :param dispatch: DispatchPost object with updated data.
-    :return: Success message.
-    """
+    
     updated_dispatch = dispatch.dict(exclude_unset=True)  # Exclude unset fields
     result = get_dispatch_collection().update_one({"_id": ObjectId(dispatch_id)}, {"$set": updated_dispatch})
     if result.modified_count == 0:
@@ -304,31 +320,43 @@ async def update_dispatch(dispatch_id: str, dispatch: DispatchPost):
 
 @router.patch("/{dispatch_id}")
 async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
- 
     existing_dispatch = await get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
     if not existing_dispatch:
         print(f"❌ Dispatch not found in DB for id={dispatch_id}")
         raise HTTPException(status_code=404, detail="Dispatch not found")
- 
+
     updated_fields = {
         key: value
         for key, value in dispatch_patch.dict(exclude_unset=True).items()
         if value is not None
     }
- 
-    # Rule: enforce qty/weight exclusivity only if only one is provided
+
+    # Rule: enforce qty/weight exclusivity only if one is provided
     if "receivedQty" in updated_fields and "receivedWeight" not in updated_fields:
         qty_values = updated_fields["receivedQty"]
         if isinstance(qty_values, list) and any(q > 0 for q in qty_values):
             updated_fields["receivedWeight"] = [0.0] * len(qty_values)
- 
+
     elif "receivedWeight" in updated_fields and "receivedQty" not in updated_fields:
         weight_values = updated_fields["receivedWeight"]
         if isinstance(weight_values, list) and any(w > 0 for w in weight_values):
             updated_fields["receivedQty"] = [0] * len(weight_values)
- 
- 
- 
+
+    # ✅ Handle receivedTime — ensure it's stored as ISO UTC string
+    if "receivedTime" in updated_fields:
+        received_time = updated_fields["receivedTime"]
+        if isinstance(received_time, datetime):
+            # normalize to UTC ISO format
+            updated_fields["receivedTime"] = received_time.astimezone(timezone.utc).isoformat()
+        else:
+            try:
+                # handle string timestamps
+                parsed_time = datetime.fromisoformat(str(received_time))
+                updated_fields["receivedTime"] = parsed_time.astimezone(timezone.utc).isoformat()
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid datetime format for receivedTime")
+
+    # ✅ Handle driverName → auto-fill driverNumber
     if "driverName" in updated_fields:
         employee = await get_employee_collection().find_one({"firstName": updated_fields["driverName"]})
         if employee:
@@ -336,7 +364,8 @@ async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
             updated_fields["driverNumber"] = str(phone_number) if phone_number else ""
         else:
             raise HTTPException(status_code=404, detail=f"Employee '{updated_fields['driverName']}' not found")
- 
+
+    # ✅ Perform update in MongoDB
     if updated_fields:
         result = await get_dispatch_collection().update_one(
             {"_id": ObjectId(dispatch_id)},
@@ -345,33 +374,28 @@ async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
         if result.modified_count == 0:
             print(f"❌ Update failed for dispatch {dispatch_id}")
             raise HTTPException(status_code=500, detail="Failed to update Dispatch")
- 
+
     updated_dispatch = await get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
     updated_dispatch["_id"] = str(updated_dispatch["_id"])
-    updated_dispatch["dispatchNo"] = str(updated_dispatch.get("dispatchNo", ""))  # ✅ force string
- 
-     # ✅ If dispatch status is RECEIVED — update system stock
+    updated_dispatch["dispatchNo"] = str(updated_dispatch.get("dispatchNo", ""))
+
+    # ✅ If dispatch status is RECEIVED — update system stock
     if updated_dispatch.get("status") in ["received", "pending_approval"]:
-        try:
-            print("📦 Dispatch received → Updating system stock...")
- 
-            # Extract data required by update_system_stock()
-            variance_names = updated_dispatch.get("varianceName", [])
-            branches = updated_dispatch.get("branchName", [])
-            stock_updates = updated_dispatch.get("receivedQty", [])
-            weight_updates = updated_dispatch.get("receivedWeight", [])
- 
-            # Call function directly (no HTTP)
-            await update_system_stock(
-                variance_names=variance_names,
-                branches=branches,
-                stock_updates=stock_updates,
-                weight_updates=weight_updates
+        
+        variance_names = updated_dispatch.get("varianceName", [])
+        branch = updated_dispatch.get("branchName", "")
+        stock_updates = updated_dispatch.get("receivedQty", [])
+        weight_updates = updated_dispatch.get("receivedWeight", [])
+
+        # Run the async update function
+        result = await update_system_stock(
+            variance_names=variance_names,
+            branch=branch,
+            stock_updates=stock_updates,
+            weight_updates=weight_updates
             )
- 
-        except Exception as e:
-            print(f"⚠️ Failed to update system stock for received dispatch: {e}")
-   
+
+
     return updated_dispatch
 
 @router.delete("/{dispatch_id}")

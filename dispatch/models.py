@@ -52,6 +52,8 @@ class Dispatch(BaseModel):
     saleOrderNo: Optional[str] = None
     approvalDetails: Optional[List[ApprovalDetails]] = None
     receivedQty: Optional[List[int]] = None
+    receivedWeight: Optional[List[float]] = None
+    receivedTime: Optional[datetime] = None
 
 
 class DispatchPost(BaseModel):
@@ -77,4 +79,6 @@ class DispatchPost(BaseModel):
     status: Optional[str] = None
     saleOrderNo: Optional[str] = None
     receivedQty: Optional[List[int]] = None
+    receivedWeight: Optional[List[float]] = None
+    receivedTime: Optional[datetime] = None
     approvalDetails: Optional[List[ApprovalDetails]] = None

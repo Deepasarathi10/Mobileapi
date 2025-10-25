@@ -238,3 +238,72 @@ class SalesOrderPost(BaseModel):
     approvalDetails: Optional[List[ApprovalDetails]] = None
     isBoxItem:Optional[List[str]] = None
     totalBoxQty:Optional[List[float]] = None 
+
+
+
+class HoldOrderPatch(BaseModel):
+    # Core Identifiers
+    salesOrderId: Optional[str] = None
+    holdOrderId: Optional[str] = None
+    saleOrderNo: Optional[str] = None
+    aliasName: Optional[str] = None
+    shiftId: Optional[str] = None
+    branchId: Optional[str] = None
+    branchName: Optional[str] = None
+    employeeName: Optional[str] = None
+
+    # Customer & Delivery
+    customerName: Optional[str] = None
+    customerNumber: Optional[str] = None
+    address: Optional[str] = None
+    landmark: Optional[str] = None
+    deliveryDate: Optional[str] = None
+    deliveryTime: Optional[str] = None
+    deliveryType: Optional[str] = None
+    orderDate: Optional[str] = None
+    orderTime: Optional[str] = None
+    event: Optional[str] = None
+    eventDate: Optional[str] = None
+
+    # Items
+    itemName: Optional[List[str]] = None
+    varianceName: Optional[List[str]] = None
+    itemCode: Optional[List[str]] = None
+    qty: Optional[List[int]] = None
+    uom: Optional[List[str]] = None
+    tax: Optional[List[float]] = None
+    price: Optional[List[float]] = None
+    weight: Optional[List[float]] = None
+    amount: Optional[List[float]] = None
+    isBoxItem: Optional[List[str]] = None
+    boxQty: Optional[List[int]] = None
+    itemWiseDiscount: Optional[List[float]] = None
+    itemWiseDiscountAmount: Optional[List[float]] = None
+
+    # Financial
+    totalAmount: Optional[float] = None
+    totalAmount2: Optional[float] = None
+    finalPrice: Optional[float] = None
+    balanceAmount: Optional[float] = None
+    discount: Optional[float] = None
+    discountAmount: Optional[float] = None
+    customCharge: Optional[float] = None
+    cash: Optional[float] = None
+    card: Optional[float] = None
+    upi: Optional[float] = None
+
+    # Company Info
+    companyName: Optional[str] = None
+    companyAddress: Optional[str] = None
+    companyGST: Optional[str] = None
+    orderType: Optional[str] = None
+
+    # Extra Info
+    remark: Optional[str] = None
+    status: Optional[str] = None
+
+
+    # Media
+    imagePath1: Optional[str] = None
+    imagePath2: Optional[str] = None
+    audioPath: Optional[str] = None

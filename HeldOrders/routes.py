@@ -3,7 +3,7 @@ from io import BytesIO
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Path, Query, logger
 from bson import ObjectId
-from .models import  SalesOrder, SalesOrderPost
+from .models import  SalesOrder, SalesOrderPost,HoldOrderPatch
 from .utils import  get_counter_collection, get_holdOrder_collection
 import logging
 from datetime import datetime, timedelta
@@ -356,7 +356,29 @@ async def patch_salesOrder(salesOrder_id: str, salesOrder_patch: SalesOrderPost)
     updated_salesOrder["salesOrderId"] = str(updated_salesOrder["_id"])
     return updated_salesOrder
 
+@router.patch("/holdOrder/{holdOrder_id}")
+async def patch_hold_order(holdOrder_id: str, holdOrder_patch: HoldOrderPatch):
+    collection = get_holdOrder_collection()
 
+    # Find based on holdOrderId instead of _id
+    existing_holdOrder = await collection.find_one({"holdOrderId": holdOrder_id})
+    if not existing_holdOrder:
+        raise HTTPException(status_code=404, detail="Hold Order not found")
+
+    try:
+        update_data = holdOrder_patch.dict(exclude_unset=True)
+        result = await collection.update_one(
+            {"holdOrderId": holdOrder_id},
+            {"$set": update_data}
+        )
+
+        if result.modified_count == 0:
+            raise HTTPException(status_code=400, detail="No changes made")
+
+        return {"message": "Hold Order updated successfully"}
+    except Exception as e:
+        print("❌ PATCH ERROR:", e)
+        raise HTTPException(status_code=500, detail="Failed to update Hold Order")
 # -----------------------
 # Delete Sales Order
 # -----------------------

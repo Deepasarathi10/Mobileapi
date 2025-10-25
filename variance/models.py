@@ -16,7 +16,10 @@ class Variance(BaseModel):
     itemName: Optional[str] = None
     tax: Optional[str] = None
     hsnCode: Optional[str] = None
+    measurementType: Optional[str] = None
+
     plateItems:Optional[bool]=None
+    uniqueQr: Optional[bool] = None
 
 class VarianceCreate(BaseModel):
     varianceName:  Optional[str]= None
@@ -33,6 +36,9 @@ class VarianceCreate(BaseModel):
     tax: Optional[str] = None
     hsnCode: Optional[str] = None
     plateItems:Optional[bool]=None
+    uniqueQr: Optional[bool] = None
+    measurementType: Optional[str] = None
+
 # Define the partial update model
 class WebInfoUpdate(BaseModel):
     webName: str = None  # Allow null to indicate no update if not provided

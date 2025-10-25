@@ -51,7 +51,7 @@ class ProductionEntry(BaseModel):
     editWeight: Optional[List[float]] = None
     editQty: Optional[List[int]] = None
     editAmount: Optional[List[float]] = None
-    editreason :Optional[str] = None
+    editreason :Optional[List[str]] = None
     
     totalAmount: Optional[Any] = None
     warehouseName: Optional[str] = None
@@ -89,7 +89,7 @@ class ProductionEntryPost(BaseModel):
     editWeight: Optional[List[float]] = None
     editQty: Optional[List[int]] = None
     editAmount: Optional[List[float]] = None
-    editreason :Optional[str] = None
+    editreason :Optional[List[str]] = None
     
     totalAmount: Optional[str] = None
     warehouseName: Optional[str] = None
