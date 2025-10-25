@@ -355,31 +355,43 @@ async def patch_salesOrder(salesOrder_id: str, salesOrder_patch: SalesOrderPost)
     updated_salesOrder = await collection.find_one({"_id": ObjectId(salesOrder_id)})
     updated_salesOrder["salesOrderId"] = str(updated_salesOrder["_id"])
     return updated_salesOrder
-
 @router.patch("/holdOrder/{holdOrder_id}")
 async def patch_hold_order(holdOrder_id: str, holdOrder_patch: HoldOrderPatch):
     collection = get_holdOrder_collection()
 
-    # Find based on holdOrderId instead of _id
+    # 1️⃣ Find based on holdOrderId field instead of _id
     existing_holdOrder = await collection.find_one({"holdOrderId": holdOrder_id})
     if not existing_holdOrder:
-        raise HTTPException(status_code=404, detail="Hold Order not found")
+        raise HTTPException(status_code=404, detail=f"Hold Order {holdOrder_id} not found")
 
     try:
+        # 2️⃣ Prepare clean update data
         update_data = holdOrder_patch.dict(exclude_unset=True)
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No valid fields to update")
+
+        print("🧩 Update Data:", update_data)
+
+        # 3️⃣ Perform the update
         result = await collection.update_one(
             {"holdOrderId": holdOrder_id},
             {"$set": update_data}
         )
 
-        if result.modified_count == 0:
-            raise HTTPException(status_code=400, detail="No changes made")
+        print("🧾 Mongo Update Result:", result.raw_result)
 
-        return {"message": "Hold Order updated successfully"}
+        # 4️⃣ Check result
+        if result.modified_count == 0:
+            # Still successful if matched but no changes (values same)
+            if result.matched_count > 0:
+                return {"message": "No changes (data already up to date)"}
+            raise HTTPException(status_code=400, detail="No document matched for update")
+
+        return {"message": f"Hold Order {holdOrder_id} updated successfully"}
+
     except Exception as e:
-        print("❌ PATCH ERROR:", e)
-        raise HTTPException(status_code=500, detail="Failed to update Hold Order")
-# -----------------------
+        print("❌ PATCH ERROR:", str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to update Hold Order: {str(e)}")
 # Delete Sales Order
 # -----------------------
 @router.delete("/{salesOrder_id}")

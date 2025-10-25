@@ -23,6 +23,7 @@ class WarehouseReturn(BaseModel):
     driverName:Optional[str] = None
     vehicleNo: Optional[str] = None
     branchName:Optional[str] = None
+    driverName: Optional[str] = None
     date: Optional[datetime]= Field(default_factory=datetime.now)
     reason: Optional[str] = None
     status: Optional[str] = Field(default="Pending")  # Added status field with default 'Pending'
@@ -49,6 +50,7 @@ class WarehouseReturnPost(BaseModel):
     driverName:Optional[str] = None
     vehicleNo: Optional[str] = None
     branchName:Optional[str] = None
+    driverName: Optional[str] = None
     date: Optional[datetime]= Field(default_factory=datetime.now)
     reason: Optional[str] = None
     status: Optional[str] = Field(default="Pending")  # Added status field with default 'Pending'
