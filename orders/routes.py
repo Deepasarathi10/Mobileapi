@@ -49,7 +49,7 @@ async def create_orders(order: DiningorderCreate):
 
 @router.get('/', response_model=List[Diningorder])
 async def get_orders():
-    orders = [serialize_dict(order) for order in await collection.find().to_list(1000)]
+    orders = [serialize_dict(order) for order in await collection.find().to_list()]
     return orders
 
 
