@@ -121,7 +121,7 @@ routes_info = [
 	{"module": "rmclosing.routes", "prefix": "/fastapi/rmclosings", "tags": ["Rm Closing"]},
 	{"module": "storeimport.routes", "prefix": "/fastapi/storeimports", "tags": ["StoreImport"]},
 	{"module": "razorPay.routes", "prefix": "/fastapi/razorPay", "tags": ["RazorPay"]},
-	{"module": "2ons.routes", "prefix": "/fastapi/reasons", "tags": ["Reason"]},
+	{"module": "reasons.routes", "prefix": "/fastapi/reasons", "tags": ["Reason"]},
     # Daily activities API 
     {"module": "meterdetailsapi.routes", "prefix": "/fastapi/meterdetails", "tags": ["Meter Details"]},
     {"module": "eppricedetails.routes", "prefix": "/fastapi/eppricedetails", "tags": ["EP Price Details"]},
