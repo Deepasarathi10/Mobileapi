@@ -12,8 +12,10 @@ import io
 import re
 from datetime import datetime
 from Location.models import CityResponse
+from country.utils import get_country_collection
+
 from .models import WareHousePost, WareHouse
-from .utils import get_warehouse_collection, get_country_collection
+from .utils import get_warehouse_collection
 
 router = APIRouter()
 logging.basicConfig(level=logging.INFO)
