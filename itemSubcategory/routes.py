@@ -195,6 +195,8 @@ async def export_all_itemsubcategories_to_csv():
         logger.error(f"Unexpected error in export-csv: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error exporting item subcategories: {str(e)}")
 
+
+
 @router.post("/import-csv")
 async def import_csv_data(file: UploadFile = File(...)):
     """Import item subcategories from a CSV file, preserving valid randomIds and handling duplicates."""
@@ -253,9 +255,8 @@ async def import_csv_data(file: UploadFile = File(...)):
         initialize_counter_if_needed()
         max_id_number = get_current_counter_value()
 
-        inserted_count = 0
-        updated_count = 0
-        successful = []
+        inserted = []
+        duplicates = []
         updated = []
         failed = []
         batch = []
@@ -273,15 +274,17 @@ async def import_csv_data(file: UploadFile = File(...)):
                     })
                     continue
 
-                subcategory_name = row.get('subCategoryName')
-                # Check for duplicate subCategoryName in CSV
+                subcategory_name = row.get('subCategoryName').strip()
+                # Check for duplicate subCategoryName in CSV or database
                 if subcategory_name.lower() in seen_names and len(seen_names[subcategory_name.lower()]) > 1:
-                    failed.append({
-                        "row": idx,
-                        "data": row,
-                        "error": f"Duplicate Item Subcategory in CSV: '{subcategory_name}'",
-                        "missingFields": []
-                    })
+                    duplicates.append(subcategory_name)
+                    logger.info(f"Subcategory '{subcategory_name}' is duplicated in CSV, skipping row {idx}.")
+                    continue
+
+                if subcategory_name.lower() in existing_subcategories_by_name:
+                    existing_subcategory = existing_subcategories_by_name[subcategory_name.lower()]
+                    duplicates.append(subcategory_name)
+                    logger.info(f"Subcategory '{subcategory_name}' already exists with randomId: '{existing_subcategory['randomId']}', skipping row {idx}.")
                     continue
 
                 # Validate status
@@ -362,7 +365,6 @@ async def import_csv_data(file: UploadFile = File(...)):
                             "data": row,
                             "message": f"Item Subcategory updated for randomId: '{provided_id}'"
                         })
-                        updated_count += 1
                         max_id_number = max(max_id_number, int(provided_id[2:]))
                         # Update existing_subcategories_by_name to prevent duplicate name errors
                         if existing_subcategory['subCategoryName'].lower() != subcategory_name.lower():
@@ -379,18 +381,6 @@ async def import_csv_data(file: UploadFile = File(...)):
                     used_ids.add(assigned_id)
                     max_id_number = max(max_id_number, int(assigned_id[2:]))
 
-                # Check for duplicate subCategoryName in the database
-                if subcategory_name.lower() in existing_subcategories_by_name:
-                    existing_subcategory = existing_subcategories_by_name[subcategory_name.lower()]
-                    if existing_subcategory['randomId'] != assigned_id:
-                        failed.append({
-                            "row": idx,
-                            "data": row,
-                            "error": f"Item Subcategory '{subcategory_name}' already exists with randomId: '{existing_subcategory['randomId']}'",
-                            "missingFields": []
-                        })
-                        continue
-
                 # Create new record
                 subcategory_data = {
                     'subCategoryName': subcategory_name,
@@ -401,14 +391,10 @@ async def import_csv_data(file: UploadFile = File(...)):
                 }
 
                 batch.append(InsertOne(subcategory_data))
-                successful.append({
-                    "row": idx,
-                    "data": row,
-                    "assignedId": assigned_id
-                })
+                inserted.append(assigned_id)
                 existing_subcategories_by_name[subcategory_name.lower()] = subcategory_data
                 existing_subcategories_by_id[assigned_id] = subcategory_data
-                inserted_count += 1
+                logger.info(f"Inserted subcategory {subcategory_name} with ID {assigned_id}")
 
                 if len(batch) >= 500:
                     collection.bulk_write(batch, ordered=False)
@@ -429,10 +415,9 @@ async def import_csv_data(file: UploadFile = File(...)):
         set_counter_value(max_id_number)
 
         response = {
-            "message": "CSV import processed successfully" if not failed else "CSV import completed with errors",
-            "inserted_count": inserted_count,
-            "updated_count": updated_count,
-            "successful": successful,
+            "message": f"Import completed: {len(inserted)} new subcategories, {len(duplicates)} duplicates skipped, {len(updated)} updated.",
+            "inserted_ids": inserted,
+            "duplicates": duplicates,
             "updated": updated,
             "failed": failed,
             "errorCount": len(failed),
@@ -446,6 +431,13 @@ async def import_csv_data(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Import error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+    
+
+
+
+
+
+
 
 @router.post("/", response_model=str)
 async def create_itemsubcategory(itemsubcategory: itemSubcategoryPost):

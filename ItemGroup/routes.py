@@ -193,6 +193,11 @@ async def export_all_itemgroups_to_csv():
         logger.error(f"Unexpected error in export-csv: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error exporting item groups: {str(e)}")
 
+
+
+
+
+
 @router.post("/import-csv")
 async def import_csv_data(file: UploadFile = File(...)):
     """Import item groups from a CSV file, preserving valid randomIds and handling duplicates."""
@@ -251,9 +256,8 @@ async def import_csv_data(file: UploadFile = File(...)):
         initialize_counter_if_needed()
         max_id_number = get_current_counter_value()
 
-        inserted_count = 0
-        updated_count = 0
-        successful = []
+        inserted = []
+        duplicates = []
         updated = []
         failed = []
         batch = []
@@ -271,15 +275,17 @@ async def import_csv_data(file: UploadFile = File(...)):
                     })
                     continue
 
-                itemgroup_name = row.get('itemGroupName')
-                # Check for duplicate itemGroupName in CSV
+                itemgroup_name = row.get('itemGroupName').strip()
+                # Check for duplicate itemGroupName in CSV or database
                 if itemgroup_name.lower() in seen_names and len(seen_names[itemgroup_name.lower()]) > 1:
-                    failed.append({
-                        "row": idx,
-                        "data": row,
-                        "error": f"Duplicate Item Group in CSV: '{itemgroup_name}'",
-                        "missingFields": []
-                    })
+                    duplicates.append(itemgroup_name)
+                    logger.info(f"Item Group '{itemgroup_name}' is duplicated in CSV, skipping row {idx}.")
+                    continue
+
+                if itemgroup_name.lower() in existing_itemgroups_by_name:
+                    existing_itemgroup = existing_itemgroups_by_name[itemgroup_name.lower()]
+                    duplicates.append(itemgroup_name)
+                    logger.info(f"Item Group '{itemgroup_name}' already exists with randomId: '{existing_itemgroup['randomId']}', skipping row {idx}.")
                     continue
 
                 # Validate status
@@ -360,7 +366,6 @@ async def import_csv_data(file: UploadFile = File(...)):
                             "data": row,
                             "message": f"Item Group updated for randomId: '{provided_id}'"
                         })
-                        updated_count += 1
                         max_id_number = max(max_id_number, int(provided_id[2:]))
                         # Update existing_itemgroups_by_name to prevent duplicate name errors
                         if existing_itemgroup['itemGroupName'].lower() != itemgroup_name.lower():
@@ -377,36 +382,20 @@ async def import_csv_data(file: UploadFile = File(...)):
                     used_ids.add(assigned_id)
                     max_id_number = max(max_id_number, int(assigned_id[2:]))
 
-                # Check for duplicate itemGroupName in the database
-                if itemgroup_name.lower() in existing_itemgroups_by_name:
-                    existing_itemgroup = existing_itemgroups_by_name[itemgroup_name.lower()]
-                    if existing_itemgroup['randomId'] != assigned_id:
-                        failed.append({
-                            "row": idx,
-                            "data": row,
-                            "error": f"Item Group '{itemgroup_name}' already exists with randomId: '{existing_itemgroup['randomId']}'",
-                            "missingFields": []
-                        })
-                        continue
-
                 # Create new record
                 itemgroup_data = {
                     'itemGroupName': itemgroup_name,
                     'randomId': assigned_id,
                     'status': status,
-                    'createdDate': current_datetime,
-                    'lastUpdatedDate': current_datetime
+                    'createdDate': created_date,
+                    'lastUpdatedDate': last_updated_date
                 }
 
                 batch.append(InsertOne(itemgroup_data))
-                successful.append({
-                    "row": idx,
-                    "data": row,
-                    "assignedId": assigned_id
-                })
+                inserted.append(assigned_id)
                 existing_itemgroups_by_name[itemgroup_name.lower()] = itemgroup_data
                 existing_itemgroups_by_id[assigned_id] = itemgroup_data
-                inserted_count += 1
+                logger.info(f"Inserted item group {itemgroup_name} with ID {assigned_id}")
 
                 if len(batch) >= 500:
                     collection.bulk_write(batch, ordered=False)
@@ -427,10 +416,9 @@ async def import_csv_data(file: UploadFile = File(...)):
         set_counter_value(max_id_number)
 
         response = {
-            "message": "CSV import processed successfully" if not failed else "CSV import completed with errors",
-            "inserted_count": inserted_count,
-            "updated_count": updated_count,
-            "successful": successful,
+            "message": f"Import completed: {len(inserted)} new item groups, {len(duplicates)} duplicates skipped, {len(updated)} updated.",
+            "inserted_ids": inserted,
+            "duplicates": duplicates,
             "updated": updated,
             "failed": failed,
             "errorCount": len(failed),
@@ -444,6 +432,13 @@ async def import_csv_data(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Import error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+    
+
+
+
+
+
+
 
 @router.post("/", response_model=str)
 async def create_itemgroup(itemgroup: ItemGroupPost):

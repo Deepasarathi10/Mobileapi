@@ -220,6 +220,12 @@ async def export_all_discounts_to_csv():
         logger.error(f"Unexpected error in export-csv: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error exporting discounts: {str(e)}")
 
+
+
+
+
+
+
 @router.post("/import-csv")
 async def import_csv_data(file: UploadFile = File(...)):
     """Import discounts from a CSV file, preserving valid randomIds and handling duplicates."""
@@ -250,18 +256,18 @@ async def import_csv_data(file: UploadFile = File(...)):
             )
 
         rows = []
-        seen_names = {}
+        seen_discounts = {}
         seen_ids = {}
         for idx, row in enumerate(csv_reader, 1):
             cleaned_row = {k: str(v).strip() if v is not None else "" for k, v in row.items()}
             rows.append((idx, cleaned_row))
 
-            name = cleaned_row.get('discountName', '').lower()
-            if name:
-                if name in seen_names:
-                    seen_names[name].append(idx)
+            discount_key = (cleaned_row.get('discountName', '').lower(), cleaned_row.get('discountPercentage', '').lower())
+            if discount_key[0] and discount_key[1]:
+                if discount_key in seen_discounts:
+                    seen_discounts[discount_key].append(idx)
                 else:
-                    seen_names[name] = [idx]
+                    seen_discounts[discount_key] = [idx]
 
             random_id = cleaned_row.get('randomId', '').strip()
             if random_id:
@@ -270,17 +276,24 @@ async def import_csv_data(file: UploadFile = File(...)):
                 else:
                     seen_ids[random_id] = [idx]
 
-        # Get existing discounts by randomId and discountName
-        existing_discounts_by_name = {d['discountName'].lower(): d for d in collection.find({}, {'discountName': 1, '_id': 1, 'randomId': 1, 'status': 1})}
-        existing_discounts_by_id = {d['randomId']: d for d in collection.find({"randomId": {"$regex": "^D\\d+$"}}, {'discountName': 1, '_id': 1, 'randomId': 1, 'status': 1})}
+        # Get existing discounts by randomId and discountName+discountPercentage
+        existing_discounts_by_key = {}
+        existing_discounts_by_id = {}
+        for d in collection.find({}, {'discountName': 1, 'discountPercentage': 1, '_id': 1, 'randomId': 1, 'status': 1}):
+            if not (d.get('discountName') and d.get('discountPercentage')):
+                logger.warning(f"Skipping invalid document with _id: {d.get('_id')} - missing discountName or discountPercentage")
+                continue
+            existing_discounts_by_key[(d['discountName'].lower(), str(d['discountPercentage']).lower())] = d
+            if d.get('randomId') and re.match(r"^D\d+$", d['randomId']):
+                existing_discounts_by_id[d['randomId']] = d
+
         used_ids = set(collection.distinct("randomId", {"randomId": {"$regex": "^D\\d+$"}}))
 
         initialize_counter_if_needed()
         max_id_number = get_current_counter_value()
 
-        inserted_count = 0
-        updated_count = 0
-        successful = []
+        inserted = []
+        duplicates = []
         updated = []
         failed = []
         batch = []
@@ -293,13 +306,14 @@ async def import_csv_data(file: UploadFile = File(...)):
                     failed.append({
                         "row": idx,
                         "data": row,
-                        "error": "Missing required fields",
+                        "error": f"Missing required fields: {', '.join([header_mapping.get(field, field) for field in missing_fields])}",
                         "missingFields": [header_mapping.get(field, field) for field in missing_fields]
                     })
                     continue
 
-                discount_name = row.get('discountName')
-                discount_percentage = row.get('discountPercentage')
+                discount_name = row.get('discountName').strip()
+                discount_percentage = row.get('discountPercentage').strip()
+                discount_key = (discount_name.lower(), discount_percentage.lower())
 
                 # Validate discount percentage
                 try:
@@ -321,14 +335,16 @@ async def import_csv_data(file: UploadFile = File(...)):
                     })
                     continue
 
-                # Check for duplicate discountName in CSV
-                if discount_name.lower() in seen_names and len(seen_names[discount_name.lower()]) > 1:
-                    failed.append({
-                        "row": idx,
-                        "data": row,
-                        "error": f"Duplicate Discount Name in CSV: '{discount_name}'",
-                        "missingFields": []
-                    })
+                # Check for duplicate discountName+discountPercentage in CSV or database
+                if discount_key in seen_discounts and len(seen_discounts[discount_key]) > 1:
+                    duplicates.append(f"{discount_name} ({discount_percentage}%)")
+                    logger.info(f"Discount '{discount_name}' with percentage '{discount_percentage}%' is duplicated in CSV, skipping row {idx}.")
+                    continue
+
+                if discount_key in existing_discounts_by_key:
+                    existing_discount = existing_discounts_by_key[discount_key]
+                    duplicates.append(f"{discount_name} ({discount_percentage}%)")
+                    logger.info(f"Discount '{discount_name}' with percentage '{discount_percentage}%' already exists with randomId: '{existing_discount['randomId']}', skipping row {idx}.")
                     continue
 
                 # Validate status
@@ -410,12 +426,11 @@ async def import_csv_data(file: UploadFile = File(...)):
                             "data": row,
                             "message": f"Discount updated for randomId: '{provided_id}'"
                         })
-                        updated_count += 1
                         max_id_number = max(max_id_number, int(provided_id[1:]))
-                        # Update existing_discounts_by_name to prevent duplicate name errors
-                        if existing_discount['discountName'].lower() != discount_name.lower():
-                            del existing_discounts_by_name[existing_discount['discountName'].lower()]
-                            existing_discounts_by_name[discount_name.lower()] = existing_discount
+                        # Update existing_discounts_by_key to prevent duplicate errors
+                        if (existing_discount['discountName'].lower(), str(existing_discount['discountPercentage']).lower()) != discount_key:
+                            del existing_discounts_by_key[(existing_discount['discountName'].lower(), str(existing_discount['discountPercentage']).lower())]
+                            existing_discounts_by_key[discount_key] = existing_discount
                         continue
                     # Valid, unused randomId from CSV
                     assigned_id = provided_id
@@ -426,18 +441,6 @@ async def import_csv_data(file: UploadFile = File(...)):
                     assigned_id = generate_sequential_id(used_ids)
                     used_ids.add(assigned_id)
                     max_id_number = max(max_id_number, int(assigned_id[1:]))
-
-                # Check for duplicate discountName in the database
-                if discount_name.lower() in existing_discounts_by_name:
-                    existing_discount = existing_discounts_by_name[discount_name.lower()]
-                    if existing_discount['randomId'] != assigned_id:
-                        failed.append({
-                            "row": idx,
-                            "data": row,
-                            "error": f"Discount '{discount_name}' already exists with randomId: '{existing_discount['randomId']}'",
-                            "missingFields": []
-                        })
-                        continue
 
                 # Create new record
                 discount_data = {
@@ -450,14 +453,10 @@ async def import_csv_data(file: UploadFile = File(...)):
                 }
 
                 batch.append(InsertOne(discount_data))
-                successful.append({
-                    "row": idx,
-                    "data": row,
-                    "assignedId": assigned_id
-                })
-                existing_discounts_by_name[discount_name.lower()] = discount_data
+                inserted.append(assigned_id)
+                existing_discounts_by_key[discount_key] = discount_data
                 existing_discounts_by_id[assigned_id] = discount_data
-                inserted_count += 1
+                logger.info(f"Inserted discount {discount_name} ({discount_percentage}%) with ID {assigned_id}")
 
                 if len(batch) >= 500:
                     collection.bulk_write(batch, ordered=False)
@@ -478,10 +477,9 @@ async def import_csv_data(file: UploadFile = File(...)):
         set_counter_value(max_id_number)
 
         response = {
-            "message": "CSV import processed successfully" if not failed else "CSV import completed with errors",
-            "inserted_count": inserted_count,
-            "updated_count": updated_count,
-            "successful": successful,
+            "message": f"Import completed: {len(inserted)} new discounts, {len(duplicates)} duplicates skipped, {len(updated)} updated.",
+            "inserted_ids": inserted,
+            "duplicates": duplicates,
             "updated": updated,
             "failed": failed,
             "errorCount": len(failed),
@@ -496,6 +494,11 @@ async def import_csv_data(file: UploadFile = File(...)):
         logger.error(f"Import error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
+
+
+
+
+        
 # Original routes (unchanged)
 @router.post("/", response_model=str)
 async def create_discount(discount: DiscountPost):
