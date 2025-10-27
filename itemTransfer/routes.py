@@ -59,7 +59,7 @@ async def get_all_itemtransfer(
         raise HTTPException(status_code=400, detail="Invalid date format. Use DD-MM-YYYY.")
 
     # Priority date fields
-    datetime_fields = ["requestDateTime", "sentDateTime", "receiveDateTime"]
+    datetime_fields = ["requestDateTime", "sentDateTime", "receiveDateTime","rejectDateTime"]
 
     for field in datetime_fields:
         query = base_query.copy()
