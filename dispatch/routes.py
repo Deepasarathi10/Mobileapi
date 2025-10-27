@@ -9,6 +9,7 @@ import pytz
 
 from Branchwiseitem.routes import update_system_stock
 from SalesOrder.utils import get_counter_collection, get_salesOrder_collection
+from warehouseItems.routes import adjust_warehouse_item_stock
 from .models import Dispatch, DispatchPost, get_iso_datetime
 from .utils import get_dispatch_collection
 from Employee.utils import get_employee_collection
@@ -21,25 +22,33 @@ logger = logging.getLogger(__name__)
 
 connected_clients = set()
 
+connected_clients = set()
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     connected_clients.add(websocket)
+    logger.info(f"🔌 WebSocket connected: {websocket.client}")
     try:
         while True:
-            await websocket.receive_text()
+            await websocket.receive_text()  # Keep the connection alive
     except WebSocketDisconnect:
-        connected_clients.remove(websocket)
+        logger.warning(f"⚠️ WebSocket temporarily disconnected: {websocket.client}")
+        # ✅ Don't remove from connected_clients
+    except Exception as e:
+        logger.error(f"❌ WebSocket error: {e}")
 
-# Helper: convert UTC datetime to IST
-def to_ist(utc_dt: datetime) -> datetime:
-    if utc_dt and isinstance(utc_dt, datetime):
-        if utc_dt.tzinfo is None:
-            utc_dt = utc_dt.replace(tzinfo=pytz.utc)
-        ist = pytz.timezone("Asia/Kolkata")
-        return utc_dt.astimezone(ist)
-    return utc_dt
 
+# Local timezone
+LOCAL_TZ = pytz.timezone("Asia/Kolkata")
+
+def utc_to_local(dt: datetime) -> datetime:
+    """Convert UTC datetime to local timezone (Asia/Kolkata)."""
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = pytz.utc.localize(dt)
+    return dt.astimezone(LOCAL_TZ)
 
 # ✅ Sequence generator
 async def get_next_dispatch_sequence() -> int:
@@ -97,14 +106,13 @@ async def create_dispatch(dispatch: DispatchPost):
         raise HTTPException(status_code=400, detail="Invalid branch or missing alias")
 
     branch_alias = branch_doc["aliasName"].upper()
+    warehouse_name = branch_doc.get("warehouseName")
 
     # ✅ Generate formatted dispatch number
     try:
         seq_num = await get_next_dispatch_sequence()
         formatted_dispatch_no = f"DI{branch_alias}{str(seq_num).zfill(5)}"
         new_dispatch_data["dispatchNo"] = str(formatted_dispatch_no)
-        # new_dispatch_data["branchAlias"] = branch_alias
-        # new_dispatch_data["createdAt"] = datetime.utcnow()
     except Exception as e:
         logger.error(f"Failed to generate dispatchNo: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate dispatch number")
@@ -112,17 +120,33 @@ async def create_dispatch(dispatch: DispatchPost):
     # ✅ Insert into MongoDB
     result = await get_dispatch_collection().insert_one(new_dispatch_data)
 
+
+    try:
+        for item_code, qty, variance_name in zip(
+            new_dispatch_data.get("itemCode", []),
+            new_dispatch_data.get("qty", []),
+            new_dispatch_data.get("varianceName", [])
+        ):
+            await adjust_warehouse_item_stock(
+                variance_item_code=item_code,
+                variance_name=variance_name,
+                warehouse_name=warehouse_name,
+                qty=-abs(qty)
+            )
+    except Exception as e:
+        logger.error(f"❌ Failed to update warehouse stock: {e}", exc_info=True)
+
     for ws in connected_clients.copy():
         try:
             await ws.send_json({
                 "type": "dispatch_created",
-                "message": f"Stock dispatched for {dispatch.branchName} by {dispatch.createdBy}",
+                "message": f"Stock dispatched for {dispatch['branchName']} by {dispatch['createdBy']}",
                 "dispatchNo": new_dispatch_data["dispatchNo"],
                 "branchAlias": branch_alias,
                 "timestamp": datetime.utcnow().isoformat()
             })
         except Exception:
-            connected_clients.remove(ws)
+            continue
 
     return {
         "message": "Dispatch created successfully",
@@ -155,6 +179,7 @@ def build_date_range_filter(start: Optional[str], end: Optional[str], field_name
     return date_filter if date_filter else None
 
 
+
 @router.get("/", response_model=List[Dispatch])
 async def get_all_dispatch_entries(
     start_date: Optional[str] = Query(None, description="Start date in DD-MM-YYYY format"),
@@ -167,26 +192,25 @@ async def get_all_dispatch_entries(
     approvalStartDate: Optional[str] = Query(None, description="Start of approval date range (DD-MM-YYYY)"),
     approvalEndDate: Optional[str] = Query(None, description="End of approval date range (DD-MM-YYYY)"),
     dispatch_no: Optional[str] = Query(None, description="Filter by dispatch number"),
-    branchName: Optional[str] = Query(None, description="Filter by dispatch number"),
+    branchName: Optional[str] = Query(None, description="Filter by branch name"),
 ):
     """
     Fetch all dispatch entries, optionally filtering by various parameters.
-    Excludes entries with a 'Cancel' status.
+    Converts UTC datetimes to local timezone (Asia/Kolkata).
     """
-    query = {"status": {"$ne": "cancelled"}}  # Exclude cancelled dispatches
+    query = {}
 
     if status:
         query["status"] = {"$regex": status, "$options": "i"}
-    approval_filter = {}
 
-    # Dispatch number filter
     if dispatch_no:
         query["dispatchNo"] = {"$regex": dispatch_no, "$options": "i"}
-     
-    if branchName:
-        query["branchName"] = {"$regex": branchName, "$options": "i"}   
 
-    # Approval filters (case-insensitive substring match)
+    if branchName:
+        query["branchName"] = {"$regex": branchName, "$options": "i"}
+
+    # Approval filters
+    approval_filter = {}
     if approvalStatus:
         approval_filter["approvalStatus"] = {"$regex": approvalStatus, "$options": "i"}
     if approvalType:
@@ -207,40 +231,48 @@ async def get_all_dispatch_entries(
         approval_date_range = build_date_range_filter(approvalStartDate, approvalEndDate, "approvalDate")
         if approval_date_range:
             approval_filter["approvalDate"] = approval_date_range
+
     if approval_filter:
         query["approvalDetails"] = {"$elemMatch": approval_filter}
 
-    # Main date filter
+    # Main date range filter
     date_range_filter = build_date_range_filter(start_date, end_date, "date")
     if date_range_filter:
         query["date"] = date_range_filter
 
-    # Fetch from DB
+    # Fetch data
     dispatch_entries = await get_dispatch_collection().find(query).to_list(length=None)
-
-    # Format results
     formatted_dispatch_entries = []
-    for entry in dispatch_entries:
-        entry["dispatchId"] = str(entry.pop("_id"))  # Replace ObjectId with string
 
+    for entry in dispatch_entries:
+        entry["dispatchId"] = str(entry.pop("_id"))
         if "dispatchNo" in entry:
-            entry["dispatchNo"] = str(entry["dispatchNo"])  # ✅ always string
-        
-        if "date" in entry and isinstance(entry["date"], str):
-            try:
-                entry["date"] = datetime.fromisoformat(entry["date"])
-            except ValueError:
-                print(f"Skipping entry with invalid date: {entry['date']}")
-                continue
-        
+            entry["dispatchNo"] = str(entry["dispatchNo"])
+
+        # 🔹 Convert datetime fields to local timezone
+        if "date" in entry and isinstance(entry["date"], datetime):
+            entry["date"] = utc_to_local(entry["date"])
+
+        if "receivedTime" in entry and isinstance(entry["receivedTime"], datetime):
+            entry["receivedTime"] = utc_to_local(entry["receivedTime"])
+
+        # Convert nested approval dates
+        if "approvalDetails" in entry and isinstance(entry["approvalDetails"], list):
+            for approval in entry["approvalDetails"]:
+                if (
+                    isinstance(approval, dict)
+                    and "approvalDate" in approval
+                    and isinstance(approval["approvalDate"], datetime)
+                ):
+                    approval["approvalDate"] = utc_to_local(approval["approvalDate"])
+
+        # Validate with Pydantic
         try:
             formatted_dispatch_entries.append(Dispatch(**entry))
         except ValidationError as e:
-            print(f"Validation error for entry: {entry}")
-            print(f"Error details: {e}")
+            print(f"⚠️ Validation error for entry: {entry.get('dispatchNo', 'Unknown')}")
+            print(f"Details: {e}")
             continue
-
-    
     return formatted_dispatch_entries
 
 @router.get("/paginated")
@@ -395,6 +427,18 @@ async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
             weight_updates=weight_updates
             )
 
+        for ws in connected_clients.copy():
+            try:
+                await ws.send_json({
+                    "type": "dispatch_received",
+                    "message": f"Stock received by {updated_dispatch['createdBy']} in {branch}",
+                    "dispatchNo": updated_dispatch["dispatchNo"],
+                    "branch": branch,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            except Exception:
+                continue
+
 
     return updated_dispatch
 
@@ -461,19 +505,63 @@ async def change_dispatch_status(dispatch_id: str, status: str):
     if not dispatch:
         raise HTTPException(status_code=404, detail="Dispatch not found")
 
-    # Update status
     result = await get_dispatch_collection().update_one(
         {"_id": obj_id},
         {"$set": {"status": status}}
     )
 
     if result.modified_count == 0:
-        # If already has the same status, treat as success instead of error
         if dispatch.get("status") == status:
             return {"message": f"Dispatch already in '{status}' status"}
         raise HTTPException(status_code=500, detail="Failed to update Dispatch status")
 
-    # Update SO if needed
+    if dispatch.get("type") == "FG":
+        try:
+            branch_name = dispatch.get("branchName")
+            branch_doc = await get_branch_collection().find_one({"branchName": branch_name})
+            if not branch_doc:  
+                raise HTTPException(status_code=404, detail="Branch not found")
+            warehouse_name = branch_doc.get("warehouseName")
+
+            item_codes = dispatch.get("itemCode", [])
+            variances = dispatch.get("varianceName", [])
+            qtys = dispatch.get("qty", [])
+            weights = dispatch.get("weight", [])
+
+            combined_qty = []
+            max_len = max(len(qtys), len(weights))
+            for i in range(max_len):
+                q = qtys[i] if i < len(qtys) else 0
+                w = weights[i] if i < len(weights) else 0
+                combined_qty.append(q if q > 0 else w)
+
+            for item_code, variance_name, qty in zip(item_codes, variances, combined_qty):
+                await adjust_warehouse_item_stock(
+                    variance_item_code=item_code,
+                    variance_name=variance_name,
+                    warehouse_name=warehouse_name,
+                    qty=abs(qty)
+                )
+
+        except Exception as e:
+            logger.error(f"❌ Failed to increase FG stock: {e}", exc_info=True)
+        
+        for ws in connected_clients.copy():
+            try:
+                message = {
+                    "type": "dispatch_cancelled",
+                    "message": f"Stock cancelled for {dispatch['branchName']} by {dispatch['createdBy']}",
+                    "dispatchNo": dispatch["dispatchNo"],
+                    "branchAlias": dispatch["aliasName"],
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                await ws.send_json(message)
+                print(f"✅ WS notification sent successfully to {ws.client} for FG dispatch {dispatch['dispatchNo']}")
+            except Exception as e:
+                print(f"⚠️ Failed to send FG WS notification to {ws.client}: {e}")
+                continue
+
+    # ✅ If dispatch is linked to SO, update its status
     if dispatch.get("type") == "SO":
         sale_order_id = dispatch.get("saleOrderNo")
         if sale_order_id:
@@ -485,6 +573,20 @@ async def change_dispatch_status(dispatch_id: str, status: str):
                 )
             else:
                 raise HTTPException(status_code=404, detail="Sale order not found")
+            
+            for ws in connected_clients.copy():
+                try:
+                    message = {
+                        "type": "dispatch_cancelled",
+                        "message": f"Saleorder dispatch cancelled for {dispatch['branchName']} by {dispatch['createdBy']}",
+                        "dispatchNo": dispatch["dispatchNo"],
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                    await ws.send_json(message)
+                    print(f"✅ WS notification sent successfully to {ws.client} for SO dispatch {dispatch['dispatchNo']}")
+                except Exception as e:
+                    print(f"⚠️ Failed to send SO WS notification to {ws.client}: {e}")
+                    continue
 
     return {"message": "Dispatch status updated successfully"}
 

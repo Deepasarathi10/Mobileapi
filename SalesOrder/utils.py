@@ -2,7 +2,7 @@
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# client = AsyncIOMotorClient("mongodb://localhost:27017")
+
 # db = client["outletManager"]
 
 # MongoDB connection and collection getter for item groups

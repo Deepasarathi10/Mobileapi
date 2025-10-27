@@ -12,8 +12,9 @@ import io
 import re
 from datetime import datetime
 from Location.models import CityResponse
+from country.utils import get_country_collection
 from .models import WareHousePost, WareHouse
-from .utils import get_warehouse_collection, get_country_collection
+from .utils import get_warehouse_collection
 
 router = APIRouter()
 logging.basicConfig(level=logging.INFO)
@@ -212,9 +213,6 @@ async def export_all_warehouses_to_csv():
         logger.error(f"Unexpected error in export-csv: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error exporting warehouses: {str(e)}")
 
-
-
-
 @router.post("/import-csv")
 async def import_csv_data(file: UploadFile = File(...)):
     """Import warehouses from a CSV file, preserving valid randomIds and handling duplicates."""
@@ -269,6 +267,7 @@ async def import_csv_data(file: UploadFile = File(...)):
                 }
             )
 
+        failed = []
         rows = []
         seen_names = {}
         seen_ids = {}
@@ -287,12 +286,12 @@ async def import_csv_data(file: UploadFile = File(...)):
                 })
                 continue
 
-            name_key = cleaned_row.get('wareHouseName', '').lower()
-            if name_key:
-                if name_key in seen_names:
-                    seen_names[name_key].append(idx)
+            warehouse_name = cleaned_row['wareHouseName']
+            if warehouse_name:
+                if warehouse_name in seen_names:
+                    seen_names[warehouse_name].append(idx)
                 else:
-                    seen_names[name_key] = [idx]
+                    seen_names[warehouse_name] = [idx]
 
             random_id = cleaned_row.get('randomId', '').strip()
             if random_id:
@@ -302,17 +301,25 @@ async def import_csv_data(file: UploadFile = File(...)):
                     seen_ids[random_id] = [idx]
 
         # Get existing warehouses by wareHouseName and randomId
-        existing_warehouses_by_name = {wh['wareHouseName'].lower(): wh for wh in collection.find({}, {'wareHouseName': 1, '_id': 1, 'randomId': 1, 'status': 1})}
-        existing_warehouses_by_id = {wh['randomId']: wh for wh in collection.find({"randomId": {"$regex": "^WH-\\d+$"}}, {'wareHouseName': 1, '_id': 1, 'randomId': 1, 'status': 1})}
+        existing_warehouses_by_name = {}
+        existing_warehouses_by_id = {}
+        for wh in collection.find({}, {'wareHouseName': 1, 'randomId': 1, '_id': 1, 'status': 1}):
+            if not wh.get('wareHouseName'):
+                logger.warning(f"Skipping invalid document with _id: {wh.get('_id')} - missing wareHouseName")
+                continue
+            existing_warehouses_by_name[wh['wareHouseName'].lower()] = wh
+            if wh.get('randomId') and re.match(r"^WH-\d+$", wh['randomId']):
+                existing_warehouses_by_id[wh['randomId']] = wh
+
         used_ids = set(collection.distinct("randomId", {"randomId": {"$regex": "^WH-\\d+$"}}))
 
         initialize_counter_if_needed()
         max_id_number = get_current_counter_value()
 
-        inserted = []
-        duplicates = []
+        inserted_count = 0
+        updated_count = 0
+        successful = []
         updated = []
-        failed = []
         batch = []
 
         for idx, row in rows:
@@ -328,19 +335,17 @@ async def import_csv_data(file: UploadFile = File(...)):
                     })
                     continue
 
-                warehouse_name = row.get('wareHouseName').strip()
+                warehouse_name = row['wareHouseName']
                 name_key = warehouse_name.lower()
 
-                # Check for duplicate wareHouseName in CSV or database
+                # Check for duplicate wareHouseName in CSV
                 if name_key in seen_names and len(seen_names[name_key]) > 1:
-                    duplicates.append(warehouse_name)
-                    logger.info(f"Warehouse '{warehouse_name}' is duplicated in CSV, skipping row {idx}.")
-                    continue
-
-                if name_key in existing_warehouses_by_name:
-                    existing_warehouse = existing_warehouses_by_name[name_key]
-                    duplicates.append(warehouse_name)
-                    logger.info(f"Warehouse '{warehouse_name}' already exists with randomId: '{existing_warehouse['randomId']}', skipping row {idx}.")
+                    failed.append({
+                        "row": idx,
+                        "data": row,
+                        "error": f"Duplicate warehouse name in CSV: '{warehouse_name}'",
+                        "missingFields": []
+                    })
                     continue
 
                 # Validate status
@@ -453,6 +458,7 @@ async def import_csv_data(file: UploadFile = File(...)):
                             "data": row,
                             "message": f"Warehouse updated for randomId: '{provided_id}'"
                         })
+                        updated_count += 1
                         max_id_number = max(max_id_number, int(provided_id[3:]))
                         # Update existing_warehouses_by_name to prevent duplicate name errors
                         if existing_warehouse['wareHouseName'].lower() != name_key:
@@ -468,6 +474,18 @@ async def import_csv_data(file: UploadFile = File(...)):
                     assigned_id = generate_random_id(used_ids)
                     used_ids.add(assigned_id)
                     max_id_number = max(max_id_number, int(assigned_id[3:]))
+
+                # Check for duplicate wareHouseName in the database
+                if name_key in existing_warehouses_by_name:
+                    existing_warehouse = existing_warehouses_by_name[name_key]
+                    if existing_warehouse['randomId'] != assigned_id:
+                        failed.append({
+                            "row": idx,
+                            "data": row,
+                            "error": f"Warehouse with name '{warehouse_name}' already exists with randomId: '{existing_warehouse['randomId']}'",
+                            "missingFields": []
+                        })
+                        continue
 
                 # Create new record
                 warehouse_data = {
@@ -495,10 +513,14 @@ async def import_csv_data(file: UploadFile = File(...)):
                 }
 
                 batch.append(InsertOne(warehouse_data))
-                inserted.append(assigned_id)
+                successful.append({
+                    "row": idx,
+                    "data": row,
+                    "assignedId": assigned_id
+                })
                 existing_warehouses_by_name[name_key] = warehouse_data
                 existing_warehouses_by_id[assigned_id] = warehouse_data
-                logger.info(f"Inserted warehouse {warehouse_name} with ID {assigned_id}")
+                inserted_count += 1
 
                 if len(batch) >= 500:
                     collection.bulk_write(batch, ordered=False)
@@ -519,9 +541,10 @@ async def import_csv_data(file: UploadFile = File(...)):
         set_counter_value(max_id_number)
 
         response = {
-            "message": f"Import completed: {len(inserted)} new warehouses, {len(duplicates)} duplicates skipped, {len(updated)} updated.",
-            "inserted_ids": inserted,
-            "duplicates": duplicates,
+            "message": "CSV import processed successfully" if not failed else "CSV import completed with errors",
+            "inserted_count": inserted_count,
+            "updated_count": updated_count,
+            "successful": successful,
             "updated": updated,
             "failed": failed,
             "errorCount": len(failed),
@@ -535,11 +558,6 @@ async def import_csv_data(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Import error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
-    
-
-
-
-
 
 # Existing endpoints (unchanged)
 def get_next_random_id():
