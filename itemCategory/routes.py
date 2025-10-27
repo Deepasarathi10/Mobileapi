@@ -202,6 +202,8 @@ async def export_all_categories_to_csv():
         logger.error(f"Unexpected error in export-csv: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error exporting categories: {str(e)}")
 
+
+
 @router.post("/import-csv")
 async def import_csv_data(file: UploadFile = File(...)):
     """Import categories from a CSV file, preserving valid randomIds and handling duplicates."""
@@ -260,9 +262,8 @@ async def import_csv_data(file: UploadFile = File(...)):
         initialize_counter_if_needed()
         max_id_number = get_current_counter_value()
 
-        inserted_count = 0
-        updated_count = 0
-        successful = []
+        inserted = []
+        duplicates = []
         updated = []
         failed = []
         batch = []
@@ -280,15 +281,17 @@ async def import_csv_data(file: UploadFile = File(...)):
                     })
                     continue
 
-                category_name = row.get('categoryName')
-                # Check for duplicate categoryName in CSV
+                category_name = row.get('categoryName').strip()
+                # Check for duplicate categoryName in CSV or database
                 if category_name.lower() in seen_names and len(seen_names[category_name.lower()]) > 1:
-                    failed.append({
-                        "row": idx,
-                        "data": row,
-                        "error": f"Duplicate Item Category in CSV: '{category_name}'",
-                        "missingFields": []
-                    })
+                    duplicates.append(category_name)
+                    logger.info(f"Category '{category_name}' is duplicated in CSV, skipping row {idx}.")
+                    continue
+
+                if category_name.lower() in existing_categories_by_name:
+                    existing_category = existing_categories_by_name[category_name.lower()]
+                    duplicates.append(category_name)
+                    logger.info(f"Category '{category_name}' already exists with randomId: '{existing_category['randomId']}', skipping row {idx}.")
                     continue
 
                 # Validate status
@@ -377,7 +380,6 @@ async def import_csv_data(file: UploadFile = File(...)):
                             "data": row,
                             "message": f"Item Category updated for randomId: '{provided_id}'"
                         })
-                        updated_count += 1
                         max_id_number = max(max_id_number, int(provided_id[2:]))
                         # Update existing_categories_by_name to prevent duplicate name errors
                         if existing_category['categoryName'].lower() != category_name.lower():
@@ -394,18 +396,6 @@ async def import_csv_data(file: UploadFile = File(...)):
                     used_ids.add(assigned_id)
                     max_id_number = max(max_id_number, int(assigned_id[2:]))
 
-                # Check for duplicate categoryName in the database
-                if category_name.lower() in existing_categories_by_name:
-                    existing_category = existing_categories_by_name[category_name.lower()]
-                    if existing_category['randomId'] != assigned_id:
-                        failed.append({
-                            "row": idx,
-                            "data": row,
-                            "error": f"Item Category '{category_name}' already exists with randomId: '{existing_category['randomId']}'",
-                            "missingFields": []
-                        })
-                        continue
-
                 # Create new record
                 category_data = {
                     'categoryName': category_name,
@@ -417,14 +407,10 @@ async def import_csv_data(file: UploadFile = File(...)):
                 }
 
                 batch.append(InsertOne(category_data))
-                successful.append({
-                    "row": idx,
-                    "data": row,
-                    "assignedId": assigned_id
-                })
+                inserted.append(assigned_id)
                 existing_categories_by_name[category_name.lower()] = category_data
                 existing_categories_by_id[assigned_id] = category_data
-                inserted_count += 1
+                logger.info(f"Inserted category {category_name} with ID {assigned_id}")
 
                 if len(batch) >= 500:
                     collection.bulk_write(batch, ordered=False)
@@ -445,10 +431,9 @@ async def import_csv_data(file: UploadFile = File(...)):
         set_counter_value(max_id_number)
 
         response = {
-            "message": "CSV import processed successfully" if not failed else "CSV import completed with errors",
-            "inserted_count": inserted_count,
-            "updated_count": updated_count,
-            "successful": successful,
+            "message": f"Import completed: {len(inserted)} new categories, {len(duplicates)} duplicates skipped, {len(updated)} updated.",
+            "inserted_ids": inserted,
+            "duplicates": duplicates,
             "updated": updated,
             "failed": failed,
             "errorCount": len(failed),
@@ -462,6 +447,20 @@ async def import_csv_data(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Import error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @router.post("/", response_model=str)
 async def create_category(category: CategoryPost):
