@@ -27,12 +27,23 @@ jobs:
           git config user.email "deepam@ngxcorp.com"
 
       # Read or initialize version from latest tag
+      # Read or initialize version from latest tag
       - name: Read or initialize version from tag
         id: get_version
         run: |
-          # Use git describe to get the latest tag. If no tags exist, default to v1.0.0
-          CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
+          # Fetch all tags
+          git fetch --tags
+
+          # Get latest semantic version tag (numerically sorted)
+          CURRENT_VERSION=$(git tag --list "v*" | sort -V | tail -n1)
+
+          # If no tags exist, start at v1.0.0
+          if [ -z "$CURRENT_VERSION" ]; then
+            CURRENT_VERSION="v1.0.0"
+          fi
+
           echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
 
       # Increment patch version
       - name: Increment version

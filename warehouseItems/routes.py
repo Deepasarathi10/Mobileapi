@@ -32,7 +32,7 @@ def format_warehouse_item(item: dict):
 
 # ------------------- Auto-fix old string warehouses -------------------
 async def fix_old_warehouse_entries():
-    collection = get_collection("warehouseitems")
+    collection = get_collection("warehouseitem")
     async for item in collection.find({}):
         wh = item.get("warehouseName")
         stock = item.get("stock")
@@ -58,7 +58,7 @@ async def fix_old_warehouse_entries():
 # ------------------- CREATE -------------------
 @router.post("/", response_model=str, status_code=status.HTTP_201_CREATED)
 async def create_warehouse_item(item: WarehouseItemPost):
-    collection = get_collection("warehouseitems")
+    collection = get_collection("warehouseitem")
     item_data = item.dict(exclude_unset=True)
 
     # Ensure system_stock is list
@@ -73,14 +73,14 @@ async def create_warehouse_item(item: WarehouseItemPost):
 # ------------------- GET ALL -------------------
 @router.get("/")
 async def get_warehouse_items():
-    collection = get_collection("warehouseitems")
+    collection = get_collection("warehouseitem")
     items = await collection.find({}).to_list(length=None)
     return [format_warehouse_item(item) for item in items]
 
 # ------------------- GET BY ID -------------------
 @router.get("/{item_id}")
 async def get_warehouse_item(item_id: str):
-    collection = get_collection("warehouseitems")
+    collection = get_collection("warehouseitem")
     try:
         obj_id = ObjectId(item_id)
     except InvalidId:
@@ -95,7 +95,7 @@ async def get_warehouse_item(item_id: str):
 # ------------------- PATCH (UPDATE) -------------------
 @router.patch("/{item_id}")
 async def update_warehouse_item(item_id: str, patch: WarehouseItemPatch):
-    collection = get_collection("warehouseitems")
+    collection = get_collection("warehouseitem")
     try:
         obj_id = ObjectId(item_id)
     except InvalidId:
@@ -131,7 +131,7 @@ async def adjust_warehouse_item_stock(
     qty > 0 → increase stock
     qty < 0 → reduce stock (but not below 0)
     """
-    collection = get_collection("warehouseitems")
+    collection = get_collection("warehouseitem")
     item = await collection.find_one({"varianceitemCode": variance_item_code})
     if not item:
         raise HTTPException(status_code=404, detail=f"Item not found: {variance_item_code}")
@@ -153,7 +153,7 @@ async def adjust_warehouse_item_stock(
 # ------------------- DELETE -------------------
 @router.delete("/{item_id}")
 async def delete_warehouse_item(item_id: str):
-    collection = get_collection("warehouseitems")
+    collection = get_collection("warehouseitem")
     try:
         obj_id = ObjectId(item_id)
     except InvalidId:

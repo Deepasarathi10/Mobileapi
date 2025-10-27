@@ -160,7 +160,7 @@ async def patch_warehouse_return(warehouse_return_id_or_number: str, warehouse_r
     updated_entry["warehouseReturnId"] = str(updated_entry["_id"])
 
     # 4️⃣ Update warehouse stock
-    warehouse_collection = get_collection("warehouseitems")
+    warehouse_collection = get_collection("warehouseitem")
     codes = updated_entry.get("itemCode", []) or []
     qtys = updated_entry.get("receivedqty", []) or []
 
