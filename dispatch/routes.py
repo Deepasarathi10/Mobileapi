@@ -31,7 +31,10 @@ async def websocket_endpoint(websocket: WebSocket):
     logger.info(f"🔌 WebSocket connected: {websocket.client}")
     try:
         while True:
-            await websocket.receive_text()
+            await websocket.receive_text()  # Keep the connection alive
+    except WebSocketDisconnect:
+        logger.warning(f"⚠️ WebSocket temporarily disconnected: {websocket.client}")
+        # ✅ Don't remove from connected_clients
     except Exception as e:
         logger.error(f"❌ WebSocket error: {e}")
 
@@ -267,6 +270,8 @@ async def get_all_dispatch_entries(
         try:
             formatted_dispatch_entries.append(Dispatch(**entry))
         except ValidationError as e:
+            print(f"⚠️ Validation error for entry: {entry.get('dispatchNo', 'Unknown')}")
+            print(f"Details: {e}")
             continue
     return formatted_dispatch_entries
 
@@ -349,6 +354,7 @@ async def update_dispatch(dispatch_id: str, dispatch: DispatchPost):
 async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
     existing_dispatch = await get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
     if not existing_dispatch:
+        print(f"❌ Dispatch not found in DB for id={dispatch_id}")
         raise HTTPException(status_code=404, detail="Dispatch not found")
 
     updated_fields = {
@@ -398,6 +404,7 @@ async def patch_dispatch(dispatch_id: str, dispatch_patch: DispatchPost):
             {"$set": updated_fields}
         )
         if result.modified_count == 0:
+            print(f"❌ Update failed for dispatch {dispatch_id}")
             raise HTTPException(status_code=500, detail="Failed to update Dispatch")
 
     updated_dispatch = await get_dispatch_collection().find_one({"_id": ObjectId(dispatch_id)})
@@ -545,11 +552,12 @@ async def change_dispatch_status(dispatch_id: str, status: str):
                     "type": "dispatch_cancelled",
                     "message": f"Stock cancelled for {dispatch['branchName']} by {dispatch['createdBy']}",
                     "dispatchNo": dispatch["dispatchNo"],
-                    "branchAlias": dispatch["aliasName"],
                     "timestamp": datetime.utcnow().isoformat()
                 }
                 await ws.send_json(message)
+                print(f"✅ WS notification sent successfully to {ws.client} for FG dispatch {dispatch['dispatchNo']}")
             except Exception as e:
+                print(f"⚠️ Failed to send FG WS notification to {ws.client}: {e}")
                 continue
 
     # ✅ If dispatch is linked to SO, update its status
@@ -574,7 +582,9 @@ async def change_dispatch_status(dispatch_id: str, status: str):
                         "timestamp": datetime.utcnow().isoformat()
                     }
                     await ws.send_json(message)
+                    print(f"✅ WS notification sent successfully to {ws.client} for SO dispatch {dispatch['dispatchNo']}")
                 except Exception as e:
+                    print(f"⚠️ Failed to send SO WS notification to {ws.client}: {e}")
                     continue
 
     return {"message": "Dispatch status updated successfully"}

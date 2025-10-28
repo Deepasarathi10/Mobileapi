@@ -99,6 +99,9 @@ async def get_all_branchwise_items():
             "webImage": item.get("webImage", ""),
             "webStatus": item.get("webStatus", ""),
             "plateItems": item.get("plateItems", ""),
+            "measurementType": item.get("measurementType", ""),
+            "uniqueQr": item.get("uniqueQr", False),
+
         }
 
         result.append(cleaned_item)

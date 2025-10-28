@@ -46,8 +46,8 @@ class SalesOrder(BaseModel):
     deliveryPartners: Optional[str] = None
     otherPayments: Optional[float] = None
     deliveryPartnerName: Optional[str] = None
-    shiftId: Optional[str] = None
-    shiftName: Optional[str] = None
+    shiftId: Optional[List[str]] = None
+    shiftName: Optional[List[str]] = None
     user: Optional[List[str]] = None
     deliveryDate: Optional[datetime] = None
     deliveryTime: Optional[str] = None
@@ -135,8 +135,8 @@ class SalesOrderPost(BaseModel):
     deliveryPartners: Optional[str] = None
     otherPayments: Optional[float] = None
     deliveryPartnerName: Optional[str] = None
-    shiftId: Optional[str] = None
-    shiftName: Optional[str] = None
+    shiftId: Optional[List[str]] = None
+    shiftName: Optional[List[str]] = None
     user: Optional[List[str]] = None  
     # deliveryDate: Optional[str] = None
     deliveryDate: Optional[str] = None 
