@@ -25,9 +25,9 @@ class WastageEntry(BaseModel):
     date: Optional[datetime] = Field(default_factory=datetime.now)
     reason: Optional[str] = None
     status: Optional[str] = Field(default="Pending")  # Added status field with default 'Pending'
-
+    sendBy:Optional[str] = None
+    receivedBy:Optional[str] = None
 class WastageEntryPost(BaseModel):
-    wastageEntryNumber: Optional[str] = None
     varianceName: Optional[List[str]] = None
     uom: Optional[List[str]] = None
     itemName: Optional[List[str]] = None
@@ -43,8 +43,10 @@ class WastageEntryPost(BaseModel):
     receivedtotalAmount: Optional[float] = None
     warehouseName: Optional[str] = None
     driverName: Optional[str] = None
-    branchName: Optional[str] = None
     vehicleNo: Optional[str] = None
+    branchName: Optional[str] = None
     date: Optional[datetime] = Field(default_factory=datetime.now)
     reason: Optional[str] = None
-    status: Optional[str] = Field(default="Pending")  # Added status field with default 'Pending'
+    status: Optional[str] = None  # Added status field, optional for creation/updates
+    sendBy:Optional[str] = None
+    receivedBy:Optional[str] = None

@@ -27,6 +27,8 @@ class WarehouseReturn(BaseModel):
     date: Optional[datetime]= Field(default_factory=datetime.now)
     reason: Optional[str] = None
     status: Optional[str] = Field(default="Pending")  # Added status field with default 'Pending'
+    sendBy:Optional[str] = None
+    receivedBy:Optional[str] = None
 
     
 class WarehouseReturnPost(BaseModel):
@@ -54,3 +56,5 @@ class WarehouseReturnPost(BaseModel):
     date: Optional[datetime]= Field(default_factory=datetime.now)
     reason: Optional[str] = None
     status: Optional[str] = Field(default="Pending")  # Added status field with default 'Pending'
+    sendBy:Optional[str] = None
+    receivedBy:Optional[str] = None

@@ -16,30 +16,31 @@ router = APIRouter()
 async def create_warehouse_return(warehouse_return: WarehouseReturnPost):
     coll = get_warehouse_return_collection()
 
-    # Generate warehouseReturnNumber
+    # Get latest warehouseReturnNumber
     last_doc = await coll.find_one(
         {"warehouseReturnNumber": {"$exists": True}},
-    
+        sort=[("_id", -1)]
     )
+
     if last_doc and last_doc.get("warehouseReturnNumber"):
-            try:
-                last_number = int(last_doc["warehouseReturnNumber"][2:])  # skip "RE"
-            except:
-                last_number = 0
+        try:
+            last_number = int(last_doc["warehouseReturnNumber"][2:])  # skip "RE"
+        except:
+            last_number = 0
     else:
-            last_number = 0       
+        last_number = 0
 
-            next_number = last_number + 1
-            warehouse_return_number = f"RE{str(next_number).zfill(4)}"
+    next_number = last_number + 1
+    warehouse_return_number = f"RE{str(next_number).zfill(4)}"
 
-            # Prepare new document
-            new_return = warehouse_return.dict()
-            new_return["warehouseReturnNumber"] = warehouse_return_number
-            new_return["date"] = new_return.get("date", datetime.utcnow())
+    # Prepare new document
+    new_return = warehouse_return.dict()
+    new_return["warehouseReturnNumber"] = warehouse_return_number
+    new_return["date"] = new_return.get("date", datetime.utcnow())
 
-            # Insert into MongoDB
-            result = await coll.insert_one(new_return)
-            new_return["warehouseReturnId"] = str(result.inserted_id)
+    # Insert into MongoDB
+    result = await coll.insert_one(new_return)
+    new_return["warehouseReturnId"] = str(result.inserted_id)
 
     # ------------------- Reduce Branch/System Stock -------------------
     try:
@@ -66,6 +67,7 @@ async def create_warehouse_return(warehouse_return: WarehouseReturnPost):
         raise HTTPException(status_code=500, detail=f"Error reducing branchwise stock: {e}")
 
     return WarehouseReturn(**new_return)
+
 
 
 # ------------------- GET ALL -------------------
