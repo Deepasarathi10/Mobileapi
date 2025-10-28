@@ -63,7 +63,7 @@ class InvoiceCreate(BaseModel):
     uom: Optional[List[str]] = None
     totalAmount: Optional[float] = None
     netAmount: Optional[float] = None
-    grossAmount: Optional[float] = None
+    crossAmount: Optional[float] = None
     advanceAmount: Optional[float] = None
     status: Optional[str] = None
     salesType: Optional[str] = None
@@ -104,9 +104,9 @@ class InvoiceUpdate(BaseModel):
     amount: Optional[List[float]] = None
     tax: Optional[List[float]] = None
     uom: Optional[List[str]] = None
-    totalAmount: Optional[float] = None
+    itemTotalAmount: Optional[float] = None
     netAmount: Optional[float] = None
-    grossAmount: Optional[float] = None
+    crossAmount: Optional[float] = None
     advanceAmount: Optional[float] = None
     status: Optional[str] = None
     salesPersonId: Optional[str] = None
