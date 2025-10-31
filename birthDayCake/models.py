@@ -14,7 +14,7 @@ class BirthDayCake(BaseModel):
     status: Optional[str] = None
     itemCode: Optional[str] = None
     manufacture: Optional[str] = None
-    recievedDate:Optional[str] = None
+    recievedDate:Optional[date] = None
     
     @validator('productionDate', 'expiryDate', pre=False, always=True)
     def convert_date_to_datetime(cls, v):
@@ -44,9 +44,9 @@ class BirthDayCakePost(BaseModel):
     status: Optional[str] = None
     itemCode: Optional[str] = None
     manufacture: Optional[str] = None
-    recievedDate:Optional[str] = None
+    recievedDate:Optional[date] = None
     
-    @validator('productionDate', 'expiryDate', pre=False, always=True)
+    @validator('productionDate', 'expiryDate','recievedDate', pre=False, always=True)
     def convert_date_to_datetime(cls, v):
         """Convert date objects to datetime for MongoDB compatibility"""
         if v and isinstance(v, date) and not isinstance(v, datetime):

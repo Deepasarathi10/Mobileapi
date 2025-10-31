@@ -2,7 +2,7 @@ import asyncio
 import gc
 import json
 import logging
-import httpx
+# import httpx
 import numpy as np
 from Branches.utils import get_branch_collection
 from fastapi import (
@@ -16,6 +16,7 @@ from fastapi import (
     UploadFile,
     Request
 )
+from motor.motor_asyncio import AsyncIOMotorCollection
 from typing import AsyncGenerator, List, Optional, Dict, Any
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -37,7 +38,7 @@ from fastapi.responses import StreamingResponse
 import re
 from asyncio import sleep
 from confluent_kafka import Producer, Consumer, KafkaError
-import cv2
+# import cv2
 import time
 # from pyzbar.pyzbar import decode
 from fastapi import APIRouter, status
@@ -269,14 +270,20 @@ class BranchwiseItem(BaseModel):
     dynamicFields: Dict[str, Any] = {}
 
 
-# Utility function to fetch branch alias names locally
+
 async def fetch_branch_alias_names_locally() -> List[str]:
     try:
-        branch_collection = get_branch_collection()
-        branches = branch_collection.find()
-        return [branch['aliasName'] for branch in branches if 'aliasName' in branch]
+        branch_collection: AsyncIOMotorCollection = get_branch_collection()
+        branches = await branch_collection.find().to_list(None)
+        alias_names = [branch['aliasName'] for branch in branches if 'aliasName' in branch and isinstance(branch['aliasName'], str)]
+        if not alias_names:
+            raise HTTPException(status_code=400, detail="No valid branch alias names found in the database.")
+        logger.debug(f"Fetched alias names: {alias_names}")
+        return alias_names
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"An error occurred while fetching branch data: {exc}")
+        logger.error(f"Error fetching branch alias names: {str(exc)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch branch alias names: {str(exc)}")
+    
 
 
 
@@ -837,6 +844,8 @@ async def export_csv():
 
 
 
+
+
 @router.get("/export-csv-headers23/")
 async def export_csv_headers():
     try:
@@ -884,6 +893,9 @@ async def export_csv_headers():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate headers: {str(e)}")
+
+
+
 
   
 @router.post("/add-item23/")
