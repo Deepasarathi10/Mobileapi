@@ -48,9 +48,9 @@ from pymongo.errors import PyMongoError
 
 router = APIRouter()
 mongo_client = AsyncIOMotorClient("mongodb://admin:YenE580nOOUE6cDhQERP@194.233.78.90:27017/admin?appName=mongosh+2.1.1&authSource=admin&authMechanism=SCRAM-SHA-256&replicaSet=yenerp-cluster")
-db = mongo_client["reactfluttertest"]
-item_collection = db["branchwiseitem"]
-branchwiseitem_collection = db["branchwiseitem"]
+db = mongo_client["admin2"]
+item_collection = db["fortest"]
+branchwiseitem_collection = db["fortest"]
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ async def create_item(item: BranchwiseItemPost):
     result = await item_collection.insert_one(item.dict())
     return str(result.inserted_id)
 
-branchwise_items_collection = db["branchwiseitem"]
+branchwise_items_collection = db["fortest"]
 variances_collection = db["variances"]
 items_collection23 = db["items"]  # Items collection
 
