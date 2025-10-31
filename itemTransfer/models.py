@@ -1,17 +1,16 @@
 from datetime import datetime
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Union
 
 class ItemType(BaseModel):
     itemtransferId: Optional[str] = None  
     itemCode: Optional[List[str]] = None
     itemName: Optional[List[str]] = None
-    reqQty: Optional[List[int]] = None    
+    reqQty: Optional[List[Union[int, float]]] = None   # ✅ both int & float
     uom: Optional[List[str]] = None
-    price: Optional[List[int]] = None
-    totalPrice: Optional[float] = None 
-    receivedQty: Optional[List[int]] = None
-    sendQty: Optional[List[int]] = None
+    price: Optional[List[float]] = None                # ✅ price can be decimal
+    receivedQty: Optional[List[Union[int, float]]] = None  
+    sendQty: Optional[List[Union[int, float]]] = None  
     fromBranch: Optional[str] = None
     toBranch: Optional[str] = None
     fromLoginId: Optional[str] = None
@@ -23,16 +22,16 @@ class ItemType(BaseModel):
     rejectDateTime: Optional[datetime] = None 
     status: Optional[str] = None
 
+
 class ItemTypePost(BaseModel):
     itemCode: Optional[List[str]] = None
     itemName: Optional[List[str]] = None
-    reqQty: Optional[List[int]] = None
+    reqQty: Optional[List[Union[int, float]]] = None   # ✅ both supported
     uom: Optional[List[str]] = None
-    price: Optional[List[int]] = None
-    totalPrice: Optional[float] = None
-    approvedQty: Optional[List[int]] = None
-    receivedQty: Optional[List[int]] = None
-    sendQty: Optional[List[int]] = None
+    price: Optional[List[float]] = None
+    approvedQty: Optional[List[float]] = None
+    receivedQty:Optional[List[Union[int, float]]] = None 
+    sendQty:Optional[List[Union[int, float]]] = None 
     fromBranch: Optional[str] = None
     toBranch: Optional[str] = None
     fromLoginId: Optional[str] = None

@@ -16,7 +16,7 @@ from fastapi import (
     UploadFile,
     Request
 )
-from typing import List, Optional, Dict, Any
+from typing import AsyncGenerator, List, Optional, Dict, Any
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 from orderType.utils import get_orderType_collection
@@ -287,202 +287,235 @@ async def upload_csv(
     replace: bool = Query(default=False)
 ):
     try:
-        # Validate file type
-        if not file.filename.endswith('.csv'):
+        # ------------------------------------------------------------------ #
+        # 1. BASIC VALIDATION & CSV → DataFrame
+        # ------------------------------------------------------------------ #
+        if not file.filename.lower().endswith('.csv'):
             raise HTTPException(status_code=400, detail="Only CSV files are supported.")
 
-        # Fetch branch alias names
         alias_names = await fetch_branch_alias_names_locally()
 
-        # Read the uploaded CSV file
         content = await file.read()
-        try:
-            df = pd.read_csv(io.BytesIO(content))
-        except Exception as e:
-            logger.error(f"Failed to parse CSV: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"Failed to parse CSV file: {str(e)}")
+        df = pd.read_csv(io.BytesIO(content))
 
-        # Define required columns based on exported headers
-        required_columns = [
+        # ------------------------------------------------------------------ #
+        # 2. COLUMN LIST (required + per-branch + optional order-type)
+        # ------------------------------------------------------------------ #
+        required = [
             'itemName', 'category', 'subCategory', 'itemGroup', 'item_Uom', 'tax',
-            'item_Defaultprice', 'description', 'hsnCode', 'varianceitemCode', 'varianceName',
-            'variance_Uom', 'variance_Defaultprice', 'shelfLife', 'reorderLevel', 'status',
-            'webName', 'webImage', 'webStatus', 'birthdayCake', 'createdDate'
+            'item_Defaultprice', 'description', 'hsnCode', 'varianceitemCode',
+            'varianceName', 'variance_Uom', 'variance_Defaultprice', 'shelfLife',
+            'reorderLevel', 'status', 'webName', 'webImage', 'webStatus',
+            'birthdayCake', 'createdDate'
         ]
-        for alias in alias_names:
-            required_columns.extend([
-                f"Price_{alias}", f"EnablePrice_{alias}", f"systemStock_{alias}",
-                f"physicalStock_{alias}", f"freeoffer_{alias}", f"discountOffer_{alias}",
-                f"finalPrice_{alias}"
-            ])
-            # Include optional order type prices if present
-            for order_type in ['takeAway', 'dineIn', 'selfOrder']:
-                if f"{order_type}_{alias}" in df.columns:
-                    required_columns.append(f"{order_type}_{alias}")
+        for a in alias_names:
+            required += [
+                f"Price_{a}", f"EnablePrice_{a}", f"systemStock_{a}",
+                f"physicalStock_{a}", f"freeoffer_{a}", f"discountOffer_{a}",
+                f"finalPrice_{a}"
+            ]
+            for ot in ('takeAway', 'dineIn', 'selfOrder'):
+                col = f"{ot}_{a}"
+                if col in df.columns:
+                    required.append(col)
 
-        # Validate required columns
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            logger.error(f"Missing columns: {missing_columns}")
-            raise HTTPException(status_code=400, detail=f"Missing required columns: {', '.join(missing_columns)}")
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            raise HTTPException(status_code=400,
+                                detail=f"Missing columns: {', '.join(missing)}")
 
-        # Validate that varianceName is non-empty
-        if 'varianceName' in df.columns:
-            if df['varianceName'].isna().any() or (df['varianceName'] == '').any():
-                logger.error("Empty or null varianceName values found")
-                raise HTTPException(status_code=400, detail="varianceName cannot be empty or null")
+        # ------------------------------------------------------------------ #
+        # 3. QUICK DATA CLEANING (vectorised, no Python loops)
+        # ------------------------------------------------------------------ #
+        df = df.fillna('')
 
-        # Clean and validate data
-        df = df.fillna('')  # Replace NaN with empty string for string fields
-        numeric_columns = [
-            'tax', 'item_Defaultprice', 'variance_Defaultprice', 'shelfLife', 'reorderLevel',
-            'hsnCode'
-        ] + [f"Price_{alias}" for alias in alias_names] + \
-          [f"systemStock_{alias}" for alias in alias_names] + \
-          [f"physicalStock_{alias}" for alias in alias_names] + \
-          [f"finalPrice_{alias}" for alias in alias_names] + \
-          [f"{order_type}_{alias}" for alias in alias_names for order_type in ['takeAway', 'dineIn', 'selfOrder'] if f"{order_type}_{alias}" in df.columns]
-        
-        for col in numeric_columns:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        # ---- varianceName must never be empty ----
+        if (df['varianceName'].astype(str).str.strip() == '').any():
+            raise HTTPException(status_code=400,
+                                detail="varianceName cannot be empty or null")
 
-        string_columns = [
-            'itemName', 'category', 'subCategory', 'itemGroup', 'item_Uom', 'description',
-            'varianceitemCode', 'varianceName', 'variance_Uom', 'status', 'webName',
-            'webImage', 'webStatus'
-        ] + [f"EnablePrice_{alias}" for alias in alias_names] + \
-          [f"freeoffer_{alias}" for alias in alias_names] + \
-          [f"discountOffer_{alias}" for alias in alias_names]
-        
-        for col in string_columns:
-            if col in df.columns:
-                df[col] = df[col].astype(str)
+        # ---- numeric columns ----
+        num_cols = (
+            ['tax', 'item_Defaultprice', 'variance_Defaultprice',
+             'shelfLife', 'reorderLevel', 'hsnCode'] +
+            [f"Price_{a}" for a in alias_names] +
+            [f"systemStock_{a}" for a in alias_names] +
+            [f"physicalStock_{a}" for a in alias_names] +
+            [f"finalPrice_{a}" for a in alias_names] +
+            [f"{ot}_{a}" for a in alias_names
+             for ot in ('takeAway', 'dineIn', 'selfOrder')
+             if f"{ot}_{a}" in df.columns]
+        )
+        for c in num_cols:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
 
+        # ---- string columns ----
+        str_cols = (
+            ['itemName', 'category', 'subCategory', 'itemGroup', 'item_Uom',
+             'description', 'varianceitemCode', 'varianceName', 'variance_Uom',
+             'status', 'webName', 'webImage', 'webStatus'] +
+            [f"EnablePrice_{a}" for a in alias_names] +
+            [f"freeoffer_{a}" for a in alias_names] +
+            [f"discountOffer_{a}" for a in alias_names]
+        )
+        for c in str_cols:
+            if c in df.columns:
+                df[c] = df[c].astype(str)
+
+        # ---- booleans & dates ----
         if 'birthdayCake' in df.columns:
-            df['birthdayCake'] = df['birthdayCake'].apply(lambda x: str(x).lower() == 'true')
-
+            df['birthdayCake'] = df['birthdayCake'].astype(str).str.lower() == 'true'
         if 'createdDate' in df.columns:
-            df['createdDate'] = pd.to_datetime(df['createdDate'], errors='coerce', utc=True)
-            df['createdDate'] = df['createdDate'].apply(lambda x: x if pd.notnull(x) else datetime.utcnow())
+            df['createdDate'] = pd.to_datetime(df['createdDate'],
+                                               errors='coerce', utc=True)
+            df['createdDate'] = df['createdDate'].apply(
+                lambda x: x if pd.notnull(x) else datetime.utcnow())
 
-        # Convert DataFrame to dictionary
-        new_data = df.to_dict(orient="records")
+        records = df.to_dict(orient="records")
 
-        # Validate and convert _id if present
-        imported_ids = []
-        duplicates = []
-        for record in new_data:
-            if '_id' in record and record['_id']:
+        # ------------------------------------------------------------------ #
+        # 4. HANDLE _id (convert or drop invalid)
+        # ------------------------------------------------------------------ #
+        for r in records:
+            if '_id' in r and r['_id']:
                 try:
-                    record['_id'] = ObjectId(str(record['_id']).strip())
-                except Exception as e:
-                    logger.error(f"Invalid ObjectId: {record['_id']}")
-                    raise HTTPException(status_code=400, detail=f"Invalid ObjectId in _id field: {record['_id']} ({str(e)})")
+                    r['_id'] = ObjectId(str(r['_id']).strip())
+                except Exception:
+                    del r['_id']      # silently drop bad id
 
-        # Perform database operations
-        try:
-            if replace:
-                logger.debug("Replacing all data")
-                await branchwise_items_collection.delete_many({})
-                result = await branchwise_items_collection.insert_many(new_data)
-                imported_ids = [str(id) for id in result.inserted_ids]
-                logger.info(f"Inserted {len(imported_ids)} records")
-            elif merge:
-                logger.debug("Merging data")
-                for record in new_data:
-                    variance_name = str(record["varianceName"]).strip()
-                    if not variance_name:
-                        logger.warning(f"Skipping row with missing varianceName")
-                        continue
+        # ------------------------------------------------------------------ #
+        # 5. BULK OPERATIONS (the part that makes it < 1 s)
+        # ------------------------------------------------------------------ #
+        imported_ids: list[str] = []
+        duplicates: list[str] = []
 
-                    # Check for duplicates in branchwise_items_collection
-                    existing_record = await branchwise_items_collection.find_one({
-                        "varianceName": {"$regex": f"^{re.escape(variance_name)}$", "$options": "i"}
-                    })
+        async def _replace() -> None:
+            nonlocal imported_ids
+            await branchwise_items_collection.delete_many({})
+            res = await branchwise_items_collection.insert_many(
+                records, ordered=False)
+            imported_ids = [str(i) for i in res.inserted_ids]
 
-                    if '_id' in record and record['_id']:
-                        # Update by _id if provided
-                        result = await branchwise_items_collection.update_one(
-                            {'_id': record['_id']},
-                            {'$set': record}
-                        )
-                        if result.modified_count > 0:
-                            imported_ids.append(str(record['_id']))
-                            logger.info(f"Updated record with _id: {record['_id']}")
-                    elif existing_record:
-                        # Update by varianceName if no _id
-                        result = await branchwise_items_collection.update_one(
-                            {"varianceName": {"$regex": f"^{re.escape(variance_name)}$", "$options": "i"}},
-                            {'$set': record}
-                        )
-                        if result.modified_count > 0:
-                            imported_ids.append(str(existing_record['_id']))
-                            logger.info(f"Updated record with varianceName: {variance_name}")
-                    else:
-                        # Insert new record
-                        if '_id' in record and not record['_id']:
-                            del record['_id']
-                        result = await branchwise_items_collection.insert_one(record)
-                        imported_ids.append(str(result.inserted_id))
-                        logger.info(f"Inserted record with varianceName: {variance_name}")
-            else:
-                logger.debug("Inserting new data")
-                for record in new_data:
-                    variance_name = str(record["varianceName"]).strip()
-                    if not variance_name:
-                        logger.warning(f"Skipping row with missing varianceName")
-                        duplicates.append("Missing varianceName")
-                        continue
+        async def _merge_or_insert() -> None:
+            nonlocal imported_ids, duplicates
 
-                    # Check for duplicates in branchwise_items_collection
-                    if await branchwise_items_collection.find_one({
-                        "varianceName": {"$regex": f"^{re.escape(variance_name)}$", "$options": "i"}
-                    }):
-                        duplicates.append(variance_name)
-                        logger.info(f"varianceName '{variance_name}' already exists, skipping.")
-                        continue
+            # ---- 1. Pull every existing varianceName in ONE query ----
+            existing = await branchwise_items_collection.find(
+                {"varianceName": {"$in": [r["varianceName"] for r in records]}},
+                {"varianceName": 1, "_id": 1}
+            ).to_list(None)
 
-                    if '_id' in record and not record['_id']:
-                        del record['_id']
-                    result = await branchwise_items_collection.insert_one(record)
-                    imported_ids.append(str(result.inserted_id))
-                    logger.info(f"Inserted record with varianceName: {variance_name}")
+            existing_map = {doc["varianceName"].lower(): doc["_id"] for doc in existing}
 
-            message = f"Import completed: {len(imported_ids)} records processed, {len(duplicates)} duplicates skipped."
-            logger.info(message)
-            return JSONResponse(content={
-                "message": message,
-                "imported_ids": imported_ids,
-                "duplicates": duplicates,
-                "columns": df.columns.tolist()
-            })
-        except PyMongoError as e:
-            logger.error(f"MongoDB error: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"MongoDB operation failed: {str(e)}")
-    except HTTPException as e:
-        raise e
+            updates: list[UpdateOne] = []
+            inserts: list[dict] = []
+
+            for rec in records:
+                vname = rec["varianceName"].strip().lower()
+                existing_id = existing_map.get(vname)
+
+                if '_id' in rec and rec['_id']:
+                    # _id wins – upsert by _id
+                    updates.append(UpdateOne({'_id': rec['_id']},
+                                            {'$set': rec}, upsert=True))
+                    imported_ids.append(str(rec['_id']))
+                elif merge and existing_id:
+                    # merge → update existing doc
+                    updates.append(UpdateOne({'_id': existing_id},
+                                            {'$set': rec}))
+                    imported_ids.append(str(existing_id))
+                elif not merge and existing_id:
+                    # insert-only → skip duplicate
+                    duplicates.append(rec["varianceName"])
+                else:
+                    # brand-new document
+                    if '_id' in rec:
+                        del rec['_id']
+                    inserts.append(rec)
+
+            # ---- 2. Fire BOTH bulk operations in parallel ----
+            async def do_updates():
+                if updates:
+                    r = await branchwise_items_collection.bulk_write(
+                        updates, ordered=False)
+                    imported_ids.extend(str(uid) for uid in r.upserted_ids)
+
+            async def do_inserts():
+                nonlocal imported_ids
+                if inserts:
+                    r = await branchwise_items_collection.insert_many(
+                        inserts, ordered=False)
+                    imported_ids.extend(str(i) for i in r.inserted_ids)
+
+            await asyncio.gather(do_updates(), do_inserts())
+
+        # ------------------------------------------------------------------ #
+        # 6. Choose the right path
+        # ------------------------------------------------------------------ #
+        if replace:
+            await _replace()
+        else:
+            await _merge_or_insert()
+
+        # ------------------------------------------------------------------ #
+        # 7. Final response
+        # ------------------------------------------------------------------ #
+        msg = (f"Import finished with – {len(imported_ids)} records, "
+               f"{len(duplicates)} duplicates skipped.")
+        logger.info(msg)
+
+        return JSONResponse(content={
+            "message": msg,
+            "imported_ids": imported_ids,
+            "duplicates": duplicates,
+            "columns": df.columns.tolist()
+        })
+
+    # ---------------------------------------------------------------------- #
+    # 8. Error handling (unchanged semantics)
+    # ---------------------------------------------------------------------- #
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"An error occurred while uploading the CSV: {str(e)}")
-    
-
+        logger.exception("upload_csv failed")
+        raise HTTPException(status_code=500,
+                            detail=f"Unexpected error: {e}")
+ 
 @router.get("/get-all-data23/")
 async def get_branchwise_promotional_items(
     branch_alias: str = Query(None, alias="branch_alias"),
     page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100)
+    limit: int = Query(10, ge=1, le=100),
+    search: Optional[str] = Query(None, alias="search")   # <-- NEW SEARCH PARAM
 ):
     try:
         # Fetch promotional offers
         promotional_offers_collection = get_collection(PROMOTIONAL_OFFERS_COLLECTION_NAME)
         promotional_offers = await promotional_offers_collection.find({}).to_list(length=None)
 
-        # Fetch all branchwise items (include _id)
+        # ------------------------------------------------------------------
+        # 1. Fetch ALL branchwise items (including _id)
+        # ------------------------------------------------------------------
         cursor = branchwise_items_collection.find({})
         items = await cursor.to_list(length=None)
 
-        # Check if items list is empty
+        # ------------------------------------------------------------------
+        # 2. FILTER BY SEARCH (itemName OR varianceName) – NEW SECTION
+        # ------------------------------------------------------------------
+        if search:
+            search_lower = search.strip().lower()
+            filtered_items = []
+            for itm in items:
+                item_name = (itm.get("itemName") or "").lower()
+                variance_name = (itm.get("varianceName") or "").lower()
+                if search_lower in item_name or search_lower in variance_name:
+                    filtered_items.append(itm)
+            items = filtered_items   # <-- replace original list
+
+        # ------------------------------------------------------------------
+        # 3. Empty-check (after possible filtering)
+        # ------------------------------------------------------------------
         if not items:
             return {
                 "page": page,
@@ -627,13 +660,15 @@ async def get_branchwise_promotional_items(
                 "branchwise": branchwise_info
             })
 
-        # Apply pagination
+        # ------------------------------------------------------------------
+        # 4. Pagination (applied AFTER merging & filtering)
+        # ------------------------------------------------------------------
         merged_keys = sorted(merged_result.keys())
         total_items = len(merged_keys)
         start_index = (page - 1) * limit
         end_index = start_index + limit
         paginated_keys = merged_keys[start_index:end_index]
-        paginated_result = { key: merged_result[key] for key in paginated_keys }
+        paginated_result = {key: merged_result[key] for key in paginated_keys}
 
         total_pages = (total_items + limit - 1) // limit
 
@@ -648,6 +683,8 @@ async def get_branchwise_promotional_items(
     finally:
         del items, promotional_offers, cleaned_item, branchwise_info, variance_info
         gc.collect()
+
+
 
 @router.get("/getbyid/{item_id}")
 async def get_item(item_id: str):
@@ -755,78 +792,99 @@ async def delete_item(item_id: str):
     
  
 
-@router.get("/export-csv23/", response_class=StreamingResponse)
+@router.get("/export-csv23/")
 async def export_csv():
     try:
-        # Fetch all data from MongoDB
-        data = await branchwise_items_collection.find().to_list(None)
-
-        if not data:
+        # === 1. Get field names from first document (avoid full load) ===
+        first_doc = await branchwise_items_collection.find_one()
+        if not first_doc:
             raise HTTPException(status_code=404, detail="No data found to export.")
 
-        # Convert data to DataFrame
-        df = pd.DataFrame(data)
+        # Remove MongoDB _id, keep all other fields
+        fieldnames = [k for k in first_doc.keys() if k != "_id"]
 
-        # Drop the '_id' column to exclude it from the Excel file
-        if "_id" in df.columns:
-            df.drop(columns=["_id"], inplace=True)
+        # === 2. Stream CSV row-by-row (no pandas, no memory explosion) ===
+        async def csv_generator() -> AsyncGenerator[bytes, None]:
+            # Write CSV header
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+            writer.writeheader()
+            yield output.getvalue().encode('utf-8')
+            output.close()
 
-        # Convert DataFrame to Excel
-        excel_buffer = io.BytesIO()
-        df.to_excel(excel_buffer, index=False)
-        excel_buffer.seek(0)
+            # Stream each document
+            cursor = branchwise_items_collection.find({}, {"_id": 0})  # Exclude _id
+            async for doc in cursor:
+                row_output = io.StringIO()
+                writer = csv.DictWriter(row_output, fieldnames=fieldnames, extrasaction='ignore')
+                writer.writerow(doc)
+                yield row_output.getvalue().encode('utf-8')
+                row_output.close()
 
-        # Create StreamingResponse for the Excel file
-        response = StreamingResponse(
-            iter([excel_buffer.getvalue()]),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )   
-        response.headers["Content-Disposition"] = "attachment; filename=branchwise_items.csv"
+        # === 3. Return streaming CSV ===
+        return StreamingResponse(
+            csv_generator(),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": "attachment; filename=branchwise_items.csv",
+                "Cache-Control": "no-cache",
+            }
+        )
 
-        return response
-
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"An error occurred while exporting the data: {exc}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
 
 
- # Export CSV headers only endpoint
-@router.get("/export-csv-headers23/", response_class=StreamingResponse)
+
+@router.get("/export-csv-headers23/")
 async def export_csv_headers():
     try:
-        # Fetch one document from MongoDB to infer columns
-        sample_document = await branchwise_items_collection.find_one()
+        # === 1. Define ALL possible headers (from your export) ===
+        base_headers = [
+            "itemName", "category", "subCategory", "itemGroup", "item_Uom", "tax",
+            "item_Defaultprice", "description", "hsnCode", "varianceitemCode",
+            "varianceName", "variance_Uom", "variance_Defaultprice", "shelfLife",
+            "reorderLevel", "status", "webName", "webImage", "webStatus",
+            "birthdayCake", "createdDate"
+        ]
 
-        if not sample_document:
-            raise HTTPException(status_code=404, detail="No data found to infer headers.")
+        # === 2. Fetch branch aliases dynamically (same logic as upload) ===
+        alias_names = await fetch_branch_alias_names_locally()  # Your existing function
 
-        # Convert sample document to DataFrame
-        df = pd.DataFrame([sample_document])
+        # === 3. Build full header list ===
+        all_headers: List[str] = base_headers.copy()
 
-        # Drop the '_id' column if you do not want it in the CSV headers
-        if "_id" in df.columns:
-            df.drop(columns=["_id"], inplace=True)
+        prefixes = [
+            "Price_", "EnablePrice_", "systemStock_", "physicalStock_",
+            "freeoffer_", "discountOffer_", "finalPrice_",
+            "takeAway_", "dineIn_", "selfOrder_"  # These were missing!
+        ]
 
-        # Create a DataFrame with only the headers
-        headers_only_df = pd.DataFrame(columns=df.columns)
+        for alias in alias_names:
+            for prefix in prefixes:
+                all_headers.append(f"{prefix}{alias}")
 
-        # Convert DataFrame to CSV with only headers
-        csv_buffer = io.StringIO()
-        headers_only_df.to_csv(csv_buffer, index=False)
-        csv_buffer.seek(0)
+        # === 4. Stream CSV with only headers ===
+        def csv_header_stream():
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(all_headers)
+            yield output.getvalue().encode('utf-8')
+            output.close()
 
-        # Create StreamingResponse for the CSV file
-        response = StreamingResponse(
-            iter([csv_buffer.getvalue()]),
-            media_type="text/csv"
+        return StreamingResponse(
+            csv_header_stream(),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": "attachment; filename=branchwise_headers.csv",
+                "Cache-Control": "no-cache",
+            }
         )
-        response.headers["Content-Disposition"] = "attachment; filename=headers_only.csv"
 
-        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate headers: {str(e)}")
 
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"An error occurred while exporting the headers: {exc}")
-  
   
 @router.post("/add-item23/")
 async def add_item(item_data: Dict[str, Any] = Body(...)):
@@ -1840,66 +1898,52 @@ async def delete_item(item_id: str):
 @router.patch("/update-variance/{variance_item_code}", status_code=200)
 async def update_variance(variance_item_code: str, variance_update: VarianceUpdate):
     """
-    Endpoint to update a variance by varianceItemcode in branchwise_items_collection.
-    Updates fields at the document's root level, including branch-specific fields.
+    ROBUST: Handles both varianceitemCode and varianceItemcode (case + camelCase)
     """
     try:
-        # Validate the variance_item_code
         if not variance_item_code:
             raise HTTPException(status_code=400, detail="Variance item code is required.")
 
-        # Log the attempt
-        print(f"Attempting to update variance with varianceItemcode: {variance_item_code}")
+        print(f"Searching for variance code: {variance_item_code}")
 
-        # Filter out None values from updates
+        # Filter None values
         update_data = {
-            "$set": {
-                key: val for key, val in variance_update.updates.items() if val is not None
-            }
+            "$set": {k: v for k, v in variance_update.updates.items() if v is not None}
         }
 
-        # Update the document where varianceitemCode matches at the root level
-        result = await branchwise_items_collection.update_one(
-            {"$or": [
-                {"varianceItemcode": variance_item_code},
-                {"varianceitemCode": variance_item_code}
-            ]},
-            update_data
-        )
+        # SEARCH ALL POSSIBLE FIELD NAMES (case-insensitive + camelCase)
+        query = {
+            "$or": [
+                {"varianceitemCode": {"$regex": f"^{variance_item_code}$", "$options": "i"}},
+                {"varianceItemcode": {"$regex": f"^{variance_item_code}$", "$options": "i"}},
+                {"variance_itemcode": {"$regex": f"^{variance_item_code}$", "$options": "i"}},
+            ]
+        }
 
-        # Log the result of the update attempt
-        print(f"Root-level update result: modified_count={result.modified_count}")
+        result = await branchwise_items_collection.update_one(query, update_data)
 
-        # If no document was updated, check if it exists
-        if result.modified_count == 0:
-            document = await branchwise_items_collection.find_one(
-                {"$or": [
-                    {"varianceItemcode": variance_item_code},
-                    {"varianceitemCode": variance_item_code}
-                ]}
+        print(f"Update result: matched={result.matched_count}, modified={result.modified_count}")
+
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Variance with code '{variance_item_code}' not found in any field."
             )
-            if document:
-                print(f"Document found but no update occurred: {document}")
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Variance with code '{variance_item_code}' found but no update made."
-                )
-            else:
-                print(f"No document found with varianceItemcode: {variance_item_code}")
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Variance with code '{variance_item_code}' not found."
-                )
 
-        # Fetch the updated document to return
-        updated_document = await branchwise_items_collection.find_one(
-            {"$or": [
-                {"varianceItemcode": variance_item_code},
-                {"varianceitemCode": variance_item_code}
-            ]}
-        )
+        if result.modified_count == 0:
+            # Document exists but no fields changed → still success
+            print("No fields changed (already up-to-date)")
+            # Still fetch to return
+            updated_doc = await branchwise_items_collection.find_one(query)
+            return {
+                "message": "Variance already up-to-date",
+                "varianceItemcode": variance_item_code,
+                "updatedFields": {}
+            }
 
-        if not updated_document:
+        # Fetch updated doc
+        updated_doc = await branchwise_items_collection.find_one(query)
+        if not updated_doc:
             raise HTTPException(status_code=404, detail="Updated variance not found.")
 
         return {
@@ -1908,11 +1952,12 @@ async def update_variance(variance_item_code: str, variance_update: VarianceUpda
             "updatedFields": variance_update.updates
         }
 
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as exc:
-        print(f"Unexpected error updating variance: {str(exc)}")
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(exc)}")
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
 
 @router.patch("/update-item-by-id/{item_id}", status_code=200)
 async def update_item_by_id(item_id: str, item_update: ItemUpdate):

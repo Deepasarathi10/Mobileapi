@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from bson import ObjectId
 from bson.errors import InvalidId
-from datetime import datetime
+from datetime import datetime,timedelta
 
 from fastapi.encoders import jsonable_encoder
 from .models import ItemType, ItemTypePost
@@ -19,15 +19,14 @@ async def create_itemtransfer(itemtransfer: ItemTypePost):
     return str(result.inserted_id)
 
 
-# ------------------- GET ALL WITH FILTERS -------------------
+#---------------------GETALL---------------------
+
 @router.get("/", response_model=List[ItemType])
 async def get_all_itemtransfer(
     from_branch: Optional[str] = Query(None),
     to_branch: Optional[str] = Query(None),
     from_login_id: Optional[str] = Query(None),  
     to_login_id: Optional[str] = Query(None),
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
     status: Optional[List[str]] = Query(None),
 ):
     base_query = {}
@@ -46,25 +45,18 @@ async def get_all_itemtransfer(
     if status:
         base_query["status"] = status[0] if len(status) == 1 else {"$in": status}
 
-    # Build date filter if applicable
-    date_filter = {}
-    try:
-        if start_date:
-            start_dt = datetime.strptime(start_date, "%d-%m-%Y").replace(hour=0, minute=0, second=0, microsecond=0)
-            date_filter["$gte"] = start_dt
-        if end_date:
-            end_dt = datetime.strptime(end_date, "%d-%m-%Y").replace(hour=23, minute=59, second=59, microsecond=999999)
-            date_filter["$lte"] = end_dt
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Use DD-MM-YYYY.")
+    # ✅ Date filter for current date and previous 2 days
+    end_dt = datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
+    start_dt = (datetime.now() - timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+    date_filter = {"$gte": start_dt, "$lte": end_dt}
 
     # Priority date fields
-    datetime_fields = ["requestDateTime", "sentDateTime", "receiveDateTime","rejectDateTime"]
+    datetime_fields = ["requestDateTime", "sentDateTime", "receiveDateTime", "rejectDateTime"]
 
     for field in datetime_fields:
         query = base_query.copy()
-        if date_filter:
-            query[field] = date_filter
+        query[field] = date_filter  # Automatically restrict to last 3 days
+
         results = await get_itemtransfer_collection().find(query).to_list(length=None)
         if results:
             for item in results:
@@ -75,6 +67,25 @@ async def get_all_itemtransfer(
 
     # No matching data
     return []
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # ------------------- GET BY ID -------------------
