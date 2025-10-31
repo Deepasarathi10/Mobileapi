@@ -14,6 +14,7 @@ class BirthDayCake(BaseModel):
     status: Optional[str] = None
     itemCode: Optional[str] = None
     manufacture: Optional[str] = None
+    recievedDate:Optional[str] = None
     
     @validator('productionDate', 'expiryDate', pre=False, always=True)
     def convert_date_to_datetime(cls, v):
@@ -43,6 +44,7 @@ class BirthDayCakePost(BaseModel):
     status: Optional[str] = None
     itemCode: Optional[str] = None
     manufacture: Optional[str] = None
+    recievedDate:Optional[str] = None
     
     @validator('productionDate', 'expiryDate', pre=False, always=True)
     def convert_date_to_datetime(cls, v):

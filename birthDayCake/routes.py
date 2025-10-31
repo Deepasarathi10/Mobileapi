@@ -22,7 +22,8 @@ def document_to_cake(doc) -> BirthDayCake:
         expiryDate=doc.get("expiryDate"),
         status=doc.get("status"),
         itemCode=doc.get("itemCode"),
-        manufacture=doc.get("manufacture")
+        manufacture=doc.get("manufacture"),
+        recievedDate=doc.get("recievedDate")
     )
     return cake
 
@@ -88,7 +89,8 @@ async def get_all_cakes():
             expiryDate=doc.get("expiryDate"),
             status=doc.get("status"),
             itemCode=doc.get("itemCode"),
-            manufacture=doc.get("manufacture")
+            manufacture=doc.get("manufacture"),
+            recievedDate=doc.get("recievedDate")
         )
         results.append(cake)
     return results

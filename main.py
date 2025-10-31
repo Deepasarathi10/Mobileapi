@@ -122,6 +122,9 @@ routes_info = [
 	{"module": "storeimport.routes", "prefix": "/fastapi/storeimports", "tags": ["StoreImport"]},
 	{"module": "razorPay.routes", "prefix": "/fastapi/razorPay", "tags": ["RazorPay"]},
 	{"module": "reasons.routes", "prefix": "/fastapi/reasons", "tags": ["Reason"]},
+	{"module": "cakeId.routes", "prefix": "/fastapi/cakeids", "tags": ["Cake Id"]},
+	{"module": "birthDayCake.routes", "prefix": "/fastapi/birthdaycakes", "tags": ["Birthday Cake"]},
+
     # Daily activities API 
     {"module": "meterdetailsapi.routes", "prefix": "/fastapi/meterdetails", "tags": ["Meter Details"]},
     {"module": "eppricedetails.routes", "prefix": "/fastapi/eppricedetails", "tags": ["EP Price Details"]},
