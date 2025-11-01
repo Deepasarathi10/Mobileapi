@@ -27,6 +27,7 @@ def format_warehouse_item(item: dict):
         "itemName": item.get("itemName") or "",
         "tax": item.get("tax") or "",
         "hsnCode": item.get("hsnCode") or "",
+        "measurementType": item.get("measurementType") or "",
         "plateItems": item.get("plateItems") if item.get("plateItems") is not None else True,
     }
 

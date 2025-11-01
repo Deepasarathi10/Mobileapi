@@ -244,21 +244,16 @@ async def patch_purchasesubcategory(purchasesubcategory_id: str, purchasesubcate
 
 
 # --- CSV IMPORT (UPDATED) ---
-
-def normalize(text: str) -> str:
-    """Normalize for case-insensitive + space-insensitive matching."""
-    return text.replace(" ", "").lower() if text else ""
 @router.post("/import-csv-single-record")
 async def import_item(
     file: UploadFile = File(...),
     location: str = None,
     sentDate: str = None,
     createdBy: str = None
-
 ):
     """
     Import purchase subcategories and quantities from CSV into a single record.
-    Use dispatchNumber from storeDispatch as the identifier instead of sequential PSxxx ID.
+    Validate that sent quantity does not exceed stockQuantity.
     """
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Invalid file format. Please upload a CSV file.")
@@ -283,8 +278,17 @@ async def import_item(
         if not rows_to_process:
             return "Import Failed: No valid items with Qty found in CSV"
 
+        # --- ✅ Check for duplicate item names in Excel ---
+        item_names = [r[0] for r in rows_to_process]
+        duplicates = [n for n in set(item_names) if item_names.count(n) > 1]
+        if duplicates:
+            return f"Import Failed: Duplicate items found in Excel - {', '.join(duplicates)}"
+
         # --- Fetch all valid items ---
-        rm_docs = await rawmaterial_col.find({}, {"itemName": 1, "uom": 1, "purchasePrice": 1, "itemCode": 1}).to_list(length=None)
+        rm_docs = await rawmaterial_col.find(
+            {},
+            {"itemName": 1, "uom": 1, "purchasePrice": 1, "itemCode": 1, "stockQuantity": 1}
+        ).to_list(length=None)
         valid_items = {doc["itemName"].strip(): doc for doc in rm_docs if "itemName" in doc}
 
         missing_items = [row[0] for row in rows_to_process if row[0] not in valid_items]
@@ -296,6 +300,9 @@ async def import_item(
         invalid_qty_items = []
         filtered_rows = []
 
+        # Aggregate total quantity per item from CSV
+        item_qty_map = {}
+
         for name, row in rows_to_process:
             qty_val = row.get("Qty") or row.get("qty")
             try:
@@ -304,11 +311,24 @@ async def import_item(
                     invalid_qty_items.append(name)
                 else:
                     filtered_rows.append((name, qty_val))
+                    item_qty_map[name] = item_qty_map.get(name, 0) + qty_val
             except ValueError:
                 invalid_qty_items.append(name)
 
         if invalid_qty_items:
             return f"Import Failed: Invalid Qty for items: {invalid_qty_items}. Only positive numbers allowed."
+
+        # --- Stock validation ---
+        overstock_items = []
+        for item_name, send_qty in item_qty_map.items():
+            doc = valid_items[item_name]
+            available_qty = float(doc.get("stockQuantity", 0))
+            if send_qty > available_qty:
+                overstock_items.append(f"{item_name}: Sent Qty ({send_qty}) > Available Qty ({available_qty})")
+
+        if overstock_items:
+            error_message = "Import Failed: Quantity exceeds stock for items - " + "; ".join(overstock_items)
+            return error_message
 
         # --- Process valid rows ---
         for name, qty_val in filtered_rows:
@@ -332,20 +352,16 @@ async def import_item(
         if not variance_names:
             return "Import Failed: No valid items to import after filtering"
 
-        # --- Get the latest dispatchNumber from storeDispatch ---
+        # --- Get the latest dispatchNumber ---
         latest_dispatch = await store_dispatch_col.find({}, {"dispatchNumber": 1}).sort("dispatchNumber", -1).to_list(length=1)
         if latest_dispatch:
-            dispatch_number = latest_dispatch[0].get("dispatchNumber", 0)+1
+            dispatch_number = latest_dispatch[0].get("dispatchNumber", 0) + 1
         else:
-            dispatch_number = 1  # default if none exist
+            dispatch_number = 1
 
-        sentDate_str = None
-        if sentDate:
-            sentDate_str = convert_to_iso(sentDate)
-        else:   
-            sentDate_str = str(sentDate)
+        sentDate_str = convert_to_iso(sentDate) if sentDate else str(sentDate)
 
-        # --- Insert document using dispatchNumber as ID ---
+        # --- Insert document ---
         document = {
             "varianceName": variance_names,
             "uom": uom_list,
@@ -355,21 +371,27 @@ async def import_item(
             "weight": weight_list,
             "qty": qty_list,
             "amount": amount_list,
-            "totalAmount": 0,                       
+            "totalAmount": 0,
             "date": get_iso_datetime(),
-            "reason": "",                     
+            "reason": "",
             "branchName": location,
             "createdBy": createdBy,
             "type": "store",
             "status": "dispatched",
-            "sentDate": sentDate_str,            
+            "sentDate": sentDate_str,
             "section": "",
-            "dispatchNumber": dispatch_number , # store it as well
+            "dispatchNumber": dispatch_number,
             "from_": "RM",
-
         }
 
         await purchasesub_col.insert_one(document)
+
+        # --- ✅ Update stockQuantity (subtract qty for each imported item) ---
+        for item_name, send_qty in item_qty_map.items():
+            await rawmaterial_col.update_one(
+                {"itemName": item_name},
+                {"$inc": {"stockQuantity": -send_qty}}
+            )
 
         return f"Imported Successfully: {len(variance_names)} items with dispatchNumber {dispatch_number}"
 
