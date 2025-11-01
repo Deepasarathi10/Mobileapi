@@ -88,7 +88,7 @@ class SalesOrder(BaseModel):
     orderType:Optional[str] =None
     createdById:Optional[str] =None
     isBoxItem:Optional[List[str]] = None
-    boxQty:Optional[List[int]] = None
+    boxQty:Optional[int] = None    
     # approvalStatus:Optional[str] =None
     # approvalType:Optional[str] =None
     # summary:Optional[str] ="No"
@@ -175,7 +175,7 @@ class SalesOrderPost(BaseModel):
     companyGST:Optional[str]=None
     orderType:Optional[str] =None
     isBoxItem:Optional[List[str]] = None
-    boxQty:Optional[List[int]] = None    
+    boxQty:Optional[int] = None    
     # approvalStatus:Optional[str] =None
     # approvalType:Optional[str] =None
     # summary:Optional[str] ="No"
