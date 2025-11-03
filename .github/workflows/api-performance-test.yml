@@ -1,0 +1,41 @@
+name: API Performance Test
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 * * * *'   # Runs every hour (optional)
+
+jobs:
+  performance-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Newman
+        run: npm install -g newman
+
+      - name: Run Postman Collection
+        run: |
+          newman run .postman/api-performance-test.postman_collection.json \
+            --reporters cli,json \
+            --reporter-json-export newman-report.json
+
+      - name: Check Average Response Time
+        run: |
+          avg_time=$(jq '[.run.executions[].response.responseTime] | add / length' newman-report.json)
+          echo "Average response time: $avg_time ms"
+          if (( $(echo "$avg_time > 500" | bc -l) )); then
+            echo "❌ Average response time is too high!"
+            exit 1
+          else
+            echo "✅ API performance is good."
+          fi
+
